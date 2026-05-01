@@ -100,6 +100,4 @@ def test_compute_pages_sequence():
     assert pages[3].col == 0 and pages[3].row == 1
 
 
-if __name__ == "__main__":
-    import pytest
-    pytest.main([__file__, "-v"])
+

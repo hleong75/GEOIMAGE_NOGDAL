@@ -121,6 +121,4 @@ def test_filename_mosaic_empty():
     assert len(layout.tiles) == 0
 
 
-if __name__ == "__main__":
-    import pytest
-    pytest.main([__file__, "-v"])
+

@@ -111,6 +111,4 @@ def test_status_text_demo(tmp_path, monkeypatch):
     assert "démo" in text.lower() or "demo" in text.lower() or str(MAX_DEMO_EXPORTS) in text
 
 
-if __name__ == "__main__":
-    import pytest
-    pytest.main([__file__, "-v"])
+

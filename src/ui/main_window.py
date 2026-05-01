@@ -157,12 +157,10 @@ class MainWindow(QMainWindow):
         self._tabs = QTabWidget()
 
         self._batch_panel = BatchPanel(self._processor)
-        self._batch_panel.log_message.connect(self._log.log if hasattr(self, "_log") else lambda m, l: None)
         self._tabs.addTab(self._batch_panel, "Traitement en lot")
 
         self._log = LogWidget()
         self._tabs.addTab(self._log, "Journal")
-        # Now reconnect batch log signal
         self._batch_panel.log_message.connect(self._log.log)
 
         root_layout.addWidget(self._tabs, stretch=2)

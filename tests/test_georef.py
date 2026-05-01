@@ -117,6 +117,4 @@ def test_geoinfo_invalid():
     assert not info.is_valid()
 
 
-if __name__ == "__main__":
-    import pytest
-    pytest.main([__file__, "-v"])
+

@@ -108,6 +108,4 @@ def test_get_grid_bounds():
         assert max_y == 6320
 
 
-if __name__ == "__main__":
-    import pytest
-    pytest.main([__file__, "-v"])
+
