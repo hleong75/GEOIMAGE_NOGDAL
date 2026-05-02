@@ -63,6 +63,16 @@ _FOOTER_H_PT = 12.0   # Bottom footer bar (source | pagination | "Impression à 
 # Total vertical overhead on content pages
 _OVERHEAD_PT = _HEADER_H_PT + _GEO_H_PT + _TILES_H_PT + _FOOTER_H_PT
 
+# Unit conversion helpers
+_MM_PER_METER = 1000.0
+
+# Overview page thumbnail bounds (pixels)
+_MIN_THUMB_PX = 64
+_MAX_THUMB_PX = 1024
+
+# Approximate character width in points (used to truncate long tile lists)
+_CHAR_WIDTH_APPROX_PT = 4.5
+
 
 @dataclass
 class PDFConfig:
@@ -223,8 +233,8 @@ def compute_pages_at_scale(mosaic: Mosaic, cfg: PDFConfig) -> List[PageInfo]:
         return compute_pages(mosaic, cfg)
 
     # Ground area covered by one page's image area in metres
-    ground_w = cfg.printable_w_mm / 1000.0 * cfg.scale
-    ground_h = cfg.image_h_mm / 1000.0 * cfg.scale
+    ground_w = cfg.printable_w_mm / _MM_PER_METER * cfg.scale
+    ground_h = cfg.image_h_mm / _MM_PER_METER * cfg.scale
 
     # Source pixels per page
     src_w = max(1, int(round(ground_w / psm)))
@@ -407,8 +417,8 @@ def _render_cover_page(
     n_pages = len(pages)
     psm = mosaic.pixel_size_m
     geo = mosaic.geo_extent
-    ground_w_m = cfg.printable_w_mm / 1000.0 * cfg.scale if cfg.scale > 0 else 0.0
-    ground_h_m = cfg.image_h_mm / 1000.0 * cfg.scale if cfg.scale > 0 else 0.0
+    ground_w_m = cfg.printable_w_mm / _MM_PER_METER * cfg.scale if cfg.scale > 0 else 0.0
+    ground_h_m = cfg.image_h_mm / _MM_PER_METER * cfg.scale if cfg.scale > 0 else 0.0
 
     meta_lines = [
         f"Nombre de tuiles source : {n_tiles}",
@@ -504,10 +514,10 @@ def _render_overview_page(
     img_area_h = ph - hdr_h - 2
     if PIL_AVAILABLE and mosaic.width > 0 and mosaic.height > 0:
         # Compute thumbnail pixel size proportional to the available area
-        max_thumb_w = int(pw / PT_PER_INCH * 96)   # 96 px per point for thumb
+        max_thumb_w = int(pw / PT_PER_INCH * 96)
         max_thumb_h = int(img_area_h / PT_PER_INCH * 96)
-        max_thumb_w = max(64, min(max_thumb_w, 1024))
-        max_thumb_h = max(64, min(max_thumb_h, 1024))
+        max_thumb_w = max(_MIN_THUMB_PX, min(max_thumb_w, _MAX_THUMB_PX))
+        max_thumb_h = max(_MIN_THUMB_PX, min(max_thumb_h, _MAX_THUMB_PX))
         thumb = mosaic.get_thumbnail(max_size=(max_thumb_w, max_thumb_h))
         thumb_bytes = _pil_to_bytes(thumb, fmt="JPEG", quality=80)
         thumb_reader = ImageReader(io.BytesIO(thumb_bytes))
@@ -735,7 +745,7 @@ def _render_atlas_content_page(
     # ---- Tile list row ----
     tile_text = "Tuiles : " + (", ".join(page.tile_names) if page.tile_names else "—")
     # Truncate if too long
-    max_chars = int(img_w / 4.5)
+    max_chars = int(img_w / _CHAR_WIDTH_APPROX_PT)
     if len(tile_text) > max_chars:
         tile_text = tile_text[:max_chars - 3] + "…"
     c.setFont("Helvetica", 7.5)
@@ -750,7 +760,7 @@ def _render_atlas_content_page(
     c.drawCentredString(lx + img_w / 2.0, footer_y + 4, f"Page {page.page_index + 1} / {total_pages}")
     c.setFont("Helvetica-Bold", 7)
     c.setFillColorRGB(0.65, 0.1, 0.1)
-    c.drawRightString(lx + img_w - 2, footer_y + 4, "⚠ Imprimer à 100 %")
+    c.drawRightString(lx + img_w - 2, footer_y + 4, "IMPRESSION A 100 %")
 
     c.restoreState()
 
