@@ -20,6 +20,7 @@ try:
     from reportlab.lib.pagesizes import A4, landscape
     from reportlab.pdfgen import canvas as rl_canvas
     from reportlab.lib.units import mm
+    from reportlab.lib.utils import ImageReader
     REPORTLAB_AVAILABLE = True
 except ImportError:
     REPORTLAB_AVAILABLE = False
@@ -199,7 +200,7 @@ def convert_to_pdf(
 
         # Convert to JPEG bytes
         img_bytes = _pil_to_bytes(region, fmt="JPEG", quality=92)
-        img_reader = io.BytesIO(img_bytes)
+        img_reader = ImageReader(io.BytesIO(img_bytes))
 
         # Scale the image to fill the printable area proportionally (no destructive resize)
         scale_x = printable_w_pt / max(page.src_w, 1)
