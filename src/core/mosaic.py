@@ -97,7 +97,9 @@ class MosaicLayout:
 def _normalize_to_uint8(arr: "np.ndarray") -> "np.ndarray":
     """Linearly scale a numpy array to uint8 [0, 255]."""
     import numpy as np
-    # Replace NaN and infinite values before computing statistics
+    # Replace NaN/Inf before computing statistics so they don't corrupt the
+    # output: NaN and -Inf map to 0 (black) to indicate missing/invalid data,
+    # +Inf maps to 255 (white/saturated) as the maximum representable value.
     arr = np.nan_to_num(arr, nan=0.0, posinf=255.0, neginf=0.0)
     lo, hi = arr.min(), arr.max()
     if lo == hi:
