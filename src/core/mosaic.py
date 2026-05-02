@@ -12,11 +12,14 @@ tiles and returns a PIL Image crop.
 
 from __future__ import annotations
 
+import logging
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 from xml.etree import ElementTree as ET
+
+logger = logging.getLogger(__name__)
 
 try:
     from PIL import Image
@@ -416,13 +419,16 @@ class Mosaic:
                     continue
 
                 cropped = tile_img.crop((crop_x1, crop_y1, crop_x2, crop_y2))
+                # Ensure RGB for consistent pasting onto RGB canvas
+                if cropped.mode != "RGB":
+                    cropped = cropped.convert("RGB")
 
                 # Paste position on canvas
                 paste_x = tile.x_off + crop_x1 - x_off
                 paste_y = tile.y_off + crop_y1 - y_off
                 canvas.paste(cropped, (paste_x, paste_y))
-            except Exception:
-                pass  # Leave blank for missing/corrupt tiles
+            except Exception as exc:
+                logger.warning("Impossible de charger la tuile %s: %s", tile.path, exc)
 
             if progress_callback:
                 progress_callback(i + 1, len(relevant))

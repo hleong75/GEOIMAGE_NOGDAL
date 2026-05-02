@@ -6,7 +6,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.core.pdf_converter import PDFConfig, Orientation, compute_pages, MM_PER_INCH
+from src.core.pdf_converter import PDFConfig, Orientation, compute_pages, MM_PER_INCH, convert_folders_to_pdf
 from src.core.mosaic import Mosaic, MosaicLayout, TileInfo
 
 
@@ -39,8 +39,14 @@ def test_config_printable_size_landscape():
     assert abs(cfg.printable_h_mm - 190.0) < 0.1
 
 
+def test_config_overlap_px():
+    cfg = PDFConfig(dpi=300, orientation=Orientation.PORTRAIT, margin_mm=10.0, overlap_mm=5.0)
+    expected = int(5.0 / MM_PER_INCH * 300)
+    assert cfg.overlap_px == expected
+
+
 def test_compute_pages_single_page():
-    cfg = PDFConfig(dpi=300, orientation=Orientation.PORTRAIT, margin_mm=10.0)
+    cfg = PDFConfig(dpi=300, orientation=Orientation.PORTRAIT, margin_mm=10.0, overlap_mm=0.0)
     # A small mosaic that fits on one page
     mosaic = _make_mock_mosaic(100, 100)
     pages = compute_pages(mosaic, cfg)
@@ -55,11 +61,11 @@ def test_compute_pages_single_page():
 
 
 def test_compute_pages_multiple():
-    cfg = PDFConfig(dpi=300, orientation=Orientation.PORTRAIT, margin_mm=10.0)
+    cfg = PDFConfig(dpi=300, orientation=Orientation.PORTRAIT, margin_mm=10.0, overlap_mm=0.0)
     pw = cfg.printable_w_px
     ph = cfg.printable_h_px
 
-    # 2 columns, 2 rows
+    # 2 columns, 2 rows -- mosaic is exactly 2x2 pages, no partial edge
     mosaic = _make_mock_mosaic(pw * 2, ph * 2)
     pages = compute_pages(mosaic, cfg)
     assert len(pages) == 4
@@ -70,7 +76,7 @@ def test_compute_pages_multiple():
 
 
 def test_compute_pages_partial_last_col():
-    cfg = PDFConfig(dpi=300, orientation=Orientation.PORTRAIT, margin_mm=10.0)
+    cfg = PDFConfig(dpi=300, orientation=Orientation.PORTRAIT, margin_mm=10.0, overlap_mm=0.0)
     pw = cfg.printable_w_px
     ph = cfg.printable_h_px
 
@@ -79,13 +85,40 @@ def test_compute_pages_partial_last_col():
     pages = compute_pages(mosaic, cfg)
     assert len(pages) == 2
 
-    # Second page should have reduced width
+    # Edge page is shifted back so it always covers a full pw-wide region
     right_page = next(p for p in pages if p.col == 1)
-    assert right_page.src_w == 200
+    assert right_page.src_w == pw
+    # src_x shifted back: mosaic.width - pw = 200
+    assert right_page.src_x == 200
+
+
+def test_compute_pages_overlap():
+    cfg = PDFConfig(dpi=300, orientation=Orientation.PORTRAIT, margin_mm=10.0, overlap_mm=0.0)
+    pw = cfg.printable_w_px
+    ph = cfg.printable_h_px
+
+    # With overlap, add a 10 mm overlap
+    overlap_mm = 10.0
+    cfg_ov = PDFConfig(dpi=300, orientation=Orientation.PORTRAIT, margin_mm=10.0, overlap_mm=overlap_mm)
+    overlap_px = cfg_ov.overlap_px
+    stride = pw - overlap_px
+
+    # Mosaic exactly 2 page-widths wide, 1 page-height tall
+    mosaic = _make_mock_mosaic(pw * 2, ph)
+    pages = compute_pages(mosaic, cfg_ov)
+
+    # More pages due to overlap
+    assert len(pages) > 2
+
+    # First page starts at 0
+    assert pages[0].src_x == 0
+    # Second page starts at stride = pw - overlap_px
+    col1_pages = [p for p in pages if p.col == 1]
+    assert col1_pages[0].src_x == stride
 
 
 def test_compute_pages_sequence():
-    cfg = PDFConfig(dpi=300, orientation=Orientation.PORTRAIT, margin_mm=0.0)
+    cfg = PDFConfig(dpi=300, orientation=Orientation.PORTRAIT, margin_mm=0.0, overlap_mm=0.0)
     pw = cfg.printable_w_px
     ph = cfg.printable_h_px
 

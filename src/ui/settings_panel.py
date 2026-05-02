@@ -60,6 +60,10 @@ class SettingsPanel(QWidget):
         return self._margin_spin.value()
 
     @property
+    def overlap_mm(self) -> float:
+        return self._overlap_spin.value()
+
+    @property
     def output_dir(self) -> Path:
         return Path(self._output_edit.text() or ".")
 
@@ -92,6 +96,15 @@ class SettingsPanel(QWidget):
         self._margin_spin.setValue(10)
         self._margin_spin.setSuffix(" mm")
         form.addRow("Marges :", self._margin_spin)
+
+        self._overlap_spin = QSpinBox()
+        self._overlap_spin.setRange(0, 50)
+        self._overlap_spin.setValue(5)
+        self._overlap_spin.setSuffix(" mm")
+        self._overlap_spin.setToolTip(
+            "Chevauchement entre pages adjacentes (évite les coupures nettes sur les bords)"
+        )
+        form.addRow("Chevauchement :", self._overlap_spin)
 
         main_layout.addWidget(pdf_group)
 
