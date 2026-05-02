@@ -6,8 +6,13 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.core.pdf_converter import PDFConfig, Orientation, compute_pages, MM_PER_INCH, convert_folders_to_pdf
+from src.core.pdf_converter import (
+    PDFConfig, Orientation, compute_pages, compute_pages_at_scale,
+    MM_PER_INCH, convert_folders_to_pdf,
+    _HEADER_H_PT, _GEO_H_PT, _TILES_H_PT, _FOOTER_H_PT, PT_PER_INCH,
+)
 from src.core.mosaic import Mosaic, MosaicLayout, TileInfo
+from src.core.georef import GeoInfo
 
 
 def _make_mock_mosaic(width: int, height: int) -> Mosaic:
@@ -16,6 +21,36 @@ def _make_mock_mosaic(width: int, height: int) -> Mosaic:
         tiles=[TileInfo(path=Path("dummy.tif"), x_off=0, y_off=0, width=width, height=height)],
         total_width=width,
         total_height=height,
+    )
+    return Mosaic(layout)
+
+
+def _make_georef_mosaic(
+    width_px: int,
+    height_px: int,
+    pixel_size_m: float,
+    min_x: float = 700000.0,
+    min_y: float = 6120000.0,
+) -> Mosaic:
+    """Create a Mosaic with georef data (Lambert 93) for scale-based tests."""
+    max_x = min_x + width_px * pixel_size_m
+    max_y = min_y + height_px * pixel_size_m
+    geo = GeoInfo(
+        min_x=min_x, min_y=min_y, max_x=max_x, max_y=max_y,
+        pixel_size_x=pixel_size_m, pixel_size_y=pixel_size_m,
+        width_px=width_px, height_px=height_px,
+        source="test",
+    )
+    tile = TileInfo(
+        path=Path("dummy.tif"), x_off=0, y_off=0,
+        width=width_px, height=height_px, geo=geo,
+    )
+    layout = MosaicLayout(
+        tiles=[tile],
+        total_width=width_px,
+        total_height=height_px,
+        pixel_size_m=pixel_size_m,
+        geo_extent=geo,
     )
     return Mosaic(layout)
 
@@ -43,6 +78,15 @@ def test_config_overlap_px():
     cfg = PDFConfig(dpi=300, orientation=Orientation.PORTRAIT, margin_mm=10.0, overlap_mm=5.0)
     expected = int(5.0 / MM_PER_INCH * 300)
     assert cfg.overlap_px == expected
+
+
+def test_config_image_h_mm():
+    """image_h_mm must be strictly less than printable_h_mm (overhead subtracted)."""
+    cfg = PDFConfig(dpi=300, orientation=Orientation.PORTRAIT, margin_mm=10.0, scale=25000)
+    assert cfg.image_h_mm < cfg.printable_h_mm
+    # Overhead is (_HEADER + _GEO + _TILES + _FOOTER) / 72 * 25.4 mm
+    overhead_mm = (_HEADER_H_PT + _GEO_H_PT + _TILES_H_PT + _FOOTER_H_PT) / PT_PER_INCH * 25.4
+    assert abs(cfg.image_h_mm - (cfg.printable_h_mm - overhead_mm)) < 0.5
 
 
 def test_compute_pages_single_page():
@@ -131,6 +175,119 @@ def test_compute_pages_sequence():
     assert pages[1].col == 1 and pages[1].row == 0
     assert pages[2].col == 2 and pages[2].row == 0
     assert pages[3].col == 0 and pages[3].row == 1
+
+
+# ---------------------------------------------------------------------------
+# compute_pages_at_scale tests
+# ---------------------------------------------------------------------------
+
+def test_compute_pages_at_scale_fallback_no_pixel_size():
+    """Without pixel_size_m, compute_pages_at_scale falls back to compute_pages."""
+    cfg = PDFConfig(dpi=300, orientation=Orientation.PORTRAIT, margin_mm=10.0, scale=25000)
+    # Mosaic without georef (pixel_size_m = 0)
+    mosaic = _make_mock_mosaic(100, 100)
+    assert mosaic.pixel_size_m == 0.0
+
+    pages_scale = compute_pages_at_scale(mosaic, cfg)
+    pages_legacy = compute_pages(mosaic, cfg)
+    assert len(pages_scale) == len(pages_legacy)
+
+
+def test_compute_pages_at_scale_fallback_no_scale():
+    """With scale=0, compute_pages_at_scale falls back to compute_pages."""
+    cfg = PDFConfig(dpi=300, orientation=Orientation.PORTRAIT, margin_mm=10.0, scale=0)
+    mosaic = _make_georef_mosaic(10000, 10000, pixel_size_m=2.5)
+
+    pages_scale = compute_pages_at_scale(mosaic, cfg)
+    pages_legacy = compute_pages(mosaic, cfg)
+    assert len(pages_scale) == len(pages_legacy)
+
+
+def test_compute_pages_at_scale_single_page():
+    """A tiny mosaic (smaller than one page at 1:25000) yields exactly one page."""
+    cfg = PDFConfig(dpi=300, orientation=Orientation.PORTRAIT, margin_mm=10.0, scale=25000)
+    # At 1:25000, portrait, 10 mm margin:
+    #   ground_w = 190/1000 * 25000 = 4750 m
+    #   image_h  < 277 mm → image_h_mm ≈ 259 mm → ground_h ≈ 6475 m
+    # A small mosaic of 100×100 pixels at 2.5 m/px = 250 m × 250 m → 1 page
+    mosaic = _make_georef_mosaic(100, 100, pixel_size_m=2.5)
+    pages = compute_pages_at_scale(mosaic, cfg)
+    assert len(pages) == 1
+    assert pages[0].page_index == 0
+    assert pages[0].col == 0
+    assert pages[0].row == 0
+
+
+def test_compute_pages_at_scale_geo_extent_populated():
+    """Pages computed at scale carry Lambert 93 extents."""
+    cfg = PDFConfig(dpi=300, orientation=Orientation.PORTRAIT, margin_mm=10.0, scale=25000)
+    mosaic = _make_georef_mosaic(10000, 10000, pixel_size_m=2.5,
+                                  min_x=700000.0, min_y=6120000.0)
+    pages = compute_pages_at_scale(mosaic, cfg)
+    assert len(pages) >= 1
+    p0 = pages[0]
+    assert p0.has_geo
+    assert abs(p0.geo_min_x - 700000.0) < 1.0
+    assert abs(p0.geo_max_y - (6120000.0 + 10000 * 2.5)) < 1.0
+
+
+def test_compute_pages_at_scale_tile_names():
+    """Each page lists the stems of tiles it overlaps."""
+    cfg = PDFConfig(dpi=300, orientation=Orientation.PORTRAIT, margin_mm=10.0, scale=25000)
+    mosaic = _make_georef_mosaic(100, 100, pixel_size_m=2.5)
+    pages = compute_pages_at_scale(mosaic, cfg)
+    assert len(pages) >= 1
+    # The single tile "dummy" should appear in page 0
+    assert "dummy" in pages[0].tile_names
+
+
+def test_compute_pages_at_scale_multi_page():
+    """A large mosaic produces multiple pages covering the full extent."""
+    cfg = PDFConfig(dpi=300, orientation=Orientation.PORTRAIT, margin_mm=10.0, scale=25000)
+    pixel_size_m = 2.5
+    # ground_w ≈ 4750 m at 1:25000, 190mm printable width
+    # Make a mosaic that covers ~2×2 pages: ~9500 m × ~2×image_h_mm/1000*25000 m
+    ground_w = cfg.printable_w_mm / 1000.0 * cfg.scale   # ~4750 m
+    ground_h = cfg.image_h_mm / 1000.0 * cfg.scale
+    # Mosaic a bit more than 2 pages wide and 2 pages tall
+    w_px = int((ground_w * 2 + 100) / pixel_size_m)
+    h_px = int((ground_h * 2 + 100) / pixel_size_m)
+    mosaic = _make_georef_mosaic(w_px, h_px, pixel_size_m=pixel_size_m)
+    pages = compute_pages_at_scale(mosaic, cfg)
+    assert len(pages) >= 4   # at least 2×2 pages
+    cols = {p.col for p in pages}
+    rows = {p.row for p in pages}
+    assert len(cols) >= 2
+    assert len(rows) >= 2
+
+
+def test_compute_pages_at_scale_consistent_src_size():
+    """All pages in a scale-based layout share the same src_w and src_h."""
+    cfg = PDFConfig(dpi=300, orientation=Orientation.PORTRAIT, margin_mm=10.0, scale=25000)
+    pixel_size_m = 2.5
+    ground_w = cfg.printable_w_mm / 1000.0 * cfg.scale
+    ground_h = cfg.image_h_mm / 1000.0 * cfg.scale
+    w_px = int((ground_w * 3 + 50) / pixel_size_m)
+    h_px = int((ground_h * 2 + 50) / pixel_size_m)
+    mosaic = _make_georef_mosaic(w_px, h_px, pixel_size_m=pixel_size_m)
+    pages = compute_pages_at_scale(mosaic, cfg)
+    assert len(pages) > 1
+    src_w_set = {p.src_w for p in pages}
+    src_h_set = {p.src_h for p in pages}
+    assert len(src_w_set) == 1, "All pages should have the same src_w"
+    assert len(src_h_set) == 1, "All pages should have the same src_h"
+
+
+def test_compute_pages_at_scale_landscape():
+    """Scale-based layout works correctly in landscape orientation."""
+    cfg = PDFConfig(dpi=300, orientation=Orientation.LANDSCAPE, margin_mm=10.0, scale=25000)
+    assert cfg.printable_w_mm > cfg.printable_h_mm   # landscape: wider than tall
+    mosaic = _make_georef_mosaic(10000, 5000, pixel_size_m=2.5)
+    pages = compute_pages_at_scale(mosaic, cfg)
+    assert len(pages) >= 1
+    # All pages should have landscape aspect ratio (src_w >= src_h)
+    for p in pages:
+        assert p.src_w >= p.src_h
 
 
 

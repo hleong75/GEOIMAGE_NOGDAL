@@ -37,6 +37,7 @@ class BatchJob:
     orientation: Orientation = Orientation.PORTRAIT
     margin_mm: float = 10.0
     overlap_mm: float = 5.0
+    scale: int = 25000
 
     status: JobStatus = JobStatus.PENDING
     progress: float = 0.0          # 0.0 – 1.0
@@ -166,11 +167,16 @@ class BatchProcessor:
                 orientation=job.orientation,
                 margin_mm=job.margin_mm,
                 overlap_mm=job.overlap_mm,
+                scale=job.scale,
                 output_path=out_path,
             )
 
-            from .pdf_converter import compute_pages
-            pages = compute_pages(mosaic, cfg)
+            from .pdf_converter import compute_pages, compute_pages_at_scale
+            use_scale = cfg.scale > 0 and mosaic.pixel_size_m > 0
+            if use_scale:
+                pages = compute_pages_at_scale(mosaic, cfg)
+            else:
+                pages = compute_pages(mosaic, cfg)
             total_pages = len(pages)
 
             def page_cb(cur: int, total: int, msg: str) -> None:

@@ -1,9 +1,10 @@
 """
 mosaic.py — Mosaic reconstruction without GDAL.
 
-Two strategies:
-  A. Filename-based  — extract XXXX/YYYY from tile names, sort into grid, stitch.
-  B. VRT-based       — parse mosaique.vrt XML for exact positions and sizes.
+Three strategies:
+  A. Georef-based   — exact Lambert 93 positioning from .tab / GeoTIFF headers (priority).
+  B. Filename-based — extract XXXX/YYYY from tile names, sort into grid, stitch.
+  C. VRT-based      — parse mosaique.vrt XML for exact positions and sizes.
 
 Memory model: tiles are NOT loaded all at once.  The Mosaic object exposes
 ``get_region(x_off, y_off, width, height)`` which loads only the required
@@ -16,8 +17,11 @@ import logging
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, Dict, List, Optional, Tuple
 from xml.etree import ElementTree as ET
+
+if TYPE_CHECKING:
+    from .georef import GeoInfo
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +60,8 @@ class TileInfo:
     # Lambert 93 grid coordinates (informational)
     grid_x: Optional[int] = None
     grid_y: Optional[int] = None
+    # Full geographic info (from .tab / GeoTIFF), may be None
+    geo: Optional["GeoInfo"] = None
 
 
 @dataclass
@@ -66,6 +72,8 @@ class MosaicLayout:
     total_height: int = 0
     # Pixel size in metres (from georef, may be 0 if unknown)
     pixel_size_m: float = 0.0
+    # Geographic extent of the full mosaic in Lambert 93 (may be None)
+    geo_extent: Optional["GeoInfo"] = None
 
     def tiles_in_region(
         self, x_off: int, y_off: int, width: int, height: int
@@ -267,6 +275,82 @@ def _linear_layout(paths: List[Path], pixel_size_m: float) -> MosaicLayout:
 
 
 # ---------------------------------------------------------------------------
+# Strategy C: georeferencing-based assembly (highest precision)
+# ---------------------------------------------------------------------------
+
+def build_mosaic_from_georef_files(tile_paths: List[Path]) -> Optional[MosaicLayout]:
+    """
+    Build a MosaicLayout by reading Lambert 93 extents from .tab / GeoTIFF headers.
+
+    This is the most accurate strategy: tile positions are derived from real
+    geographic coordinates rather than filename patterns.  Returns ``None`` when
+    no georeferencing data can be extracted from any tile.
+    """
+    from .georef import get_georef, GeoInfo as _GeoInfo
+
+    geo_tiles: list[tuple[Path, "_GeoInfo"]] = []
+    for path in tile_paths:
+        geo = get_georef(path)
+        if geo and geo.is_valid():
+            geo_tiles.append((path, geo))
+
+    if not geo_tiles:
+        return None
+
+    # Overall Lambert 93 extent
+    min_x = min(g.min_x for _, g in geo_tiles)
+    min_y = min(g.min_y for _, g in geo_tiles)
+    max_x = max(g.max_x for _, g in geo_tiles)
+    max_y = max(g.max_y for _, g in geo_tiles)
+
+    # Reference pixel size (use the first valid tile; all tiles in the same
+    # series have the same resolution)
+    pixel_size_m = geo_tiles[0][1].pixel_size_x
+    if pixel_size_m <= 0:
+        pixel_size_m = 1.0
+
+    total_w_px = max(1, int(round((max_x - min_x) / pixel_size_m)))
+    total_h_px = max(1, int(round((max_y - min_y) / pixel_size_m)))
+
+    # Build global GeoInfo for the full mosaic
+    from .georef import GeoInfo as _GeoInfo2
+    global_geo = _GeoInfo2(
+        min_x=min_x,
+        min_y=min_y,
+        max_x=max_x,
+        max_y=max_y,
+        pixel_size_x=pixel_size_m,
+        pixel_size_y=pixel_size_m,
+        width_px=total_w_px,
+        height_px=total_h_px,
+        source="georef_mosaic",
+    )
+
+    tiles: list[TileInfo] = []
+    for path, geo in geo_tiles:
+        x_off = int(round((geo.min_x - min_x) / pixel_size_m))
+        y_off = int(round((max_y - geo.max_y) / pixel_size_m))
+        tiles.append(
+            TileInfo(
+                path=path,
+                x_off=x_off,
+                y_off=y_off,
+                width=geo.width_px,
+                height=geo.height_px,
+                geo=geo,
+            )
+        )
+
+    return MosaicLayout(
+        tiles=tiles,
+        total_width=total_w_px,
+        total_height=total_h_px,
+        pixel_size_m=pixel_size_m,
+        geo_extent=global_geo,
+    )
+
+
+# ---------------------------------------------------------------------------
 # Strategy B: VRT-based assembly (priority)
 # ---------------------------------------------------------------------------
 
@@ -390,7 +474,19 @@ class Mosaic:
         cls,
         tile_paths: List[Path],
         pixel_size_m: float = 0.0,
+        try_georef: bool = True,
     ) -> "Mosaic":
+        """
+        Build a Mosaic from a list of tile paths.
+
+        When *try_georef* is True (default), attempts to read Lambert 93
+        extents from ``.tab`` / GeoTIFF headers first for exact positioning.
+        Falls back to filename-based grid assembly when georef is unavailable.
+        """
+        if try_georef and tile_paths:
+            layout = build_mosaic_from_georef_files(tile_paths)
+            if layout is not None:
+                return cls(layout)
         layout = build_mosaic_from_filenames(tile_paths, pixel_size_m)
         return cls(layout)
 
@@ -405,6 +501,11 @@ class Mosaic:
     @property
     def pixel_size_m(self) -> float:
         return self.layout.pixel_size_m
+
+    @property
+    def geo_extent(self) -> "Optional[GeoInfo]":
+        """Lambert 93 bounding box of the full mosaic, or None."""
+        return self.layout.geo_extent
 
     def get_region(
         self,
