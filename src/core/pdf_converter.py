@@ -17,6 +17,7 @@ from __future__ import annotations
 import io
 import math
 from dataclasses import dataclass, field
+from datetime import datetime
 from enum import Enum
 from pathlib import Path
 from typing import Callable, List, Optional, Tuple
@@ -56,12 +57,27 @@ PT_PER_INCH = 72.0
 
 # Atlas page layout constants (points)
 # These define reserved areas on content pages for headers/footers.
-_HEADER_H_PT = 18.0   # Top header bar (lot | page | col/row | scale)
-_GEO_H_PT    = 11.0   # Lambert 93 extent row
-_TILES_H_PT  = 11.0   # Tile list row
-_FOOTER_H_PT = 12.0   # Bottom footer bar (source | pagination | "Impression à 100%")
+_HEADER_H_PT = 70.0   # Top header rounded rect (dataset + 3 info lines)
+_GEO_H_PT    = 0.0    # Lambert 93 extent now embedded in the header
+_TILES_H_PT  = 0.0    # Tile list now embedded in the header
+_FOOTER_H_PT = 20.0   # Bottom footer bar (source | pagination | scale reminder)
 # Total vertical overhead on content pages
 _OVERHEAD_PT = _HEADER_H_PT + _GEO_H_PT + _TILES_H_PT + _FOOTER_H_PT
+
+# ---------------------------------------------------------------------------
+# Professional colour palette (RGB 0–1 floats)
+# ---------------------------------------------------------------------------
+_COL_ACCENT        = (0.12, 0.28, 0.50)   # dark-blue accent
+_COL_WHITE         = (1.00, 1.00, 1.00)
+_COL_BOX_BORDER    = (0.72, 0.79, 0.88)   # light blue-grey border
+_COL_TEXT          = (0.12, 0.12, 0.15)   # near-black text
+_COL_MUTED         = (0.45, 0.48, 0.54)   # secondary / muted text
+_COL_NOTICE_FILL   = (0.95, 0.97, 1.00)   # light-blue notice background
+_COL_NOTICE_STROKE = (0.67, 0.78, 0.92)   # notice border
+_COL_TILE_FILL     = (0.83, 0.90, 0.98)   # tile legend swatch fill
+_COL_TILE_STROKE   = (0.22, 0.47, 0.72)   # tile legend swatch stroke
+_COL_PAGE_STROKE   = (0.82, 0.33, 0.05)   # page legend swatch stroke
+_COL_BODY_FILL     = (0.96, 0.96, 0.97)   # image-area background
 
 # Unit conversion helpers
 _MM_PER_METER = 1000.0
@@ -73,6 +89,8 @@ _MAX_THUMB_PX = 1024
 # Approximate character width in points (used to truncate long tile lists)
 _CHAR_WIDTH_APPROX_PT = 4.5
 
+# Maximum number of tile names shown inline in the page header
+_MAX_HEADER_TILES = 5
 
 @dataclass
 class PDFConfig:
@@ -311,8 +329,56 @@ def _pil_to_bytes(img: "Image.Image", fmt: str = "JPEG", quality: int = 90) -> b
 
 
 # ---------------------------------------------------------------------------
-# Visual index helper
+# Formatting helpers
 # ---------------------------------------------------------------------------
+
+def _format_scale(scale_value: int) -> str:
+    """Return a human-readable scale string such as '1 : 25 000'."""
+    return f"1\u202f:\u202f{scale_value:,}".replace(",", "\u202f")
+
+
+def _format_distance_m(meters: float) -> str:
+    """Format a ground distance in metres or kilometres."""
+    if meters >= 1000.0:
+        return f"{meters / 1000.0:.2f} km"
+    return f"{meters:.0f} m"
+
+
+def _shorten_text(text: str, max_chars: int) -> str:
+    """Truncate *text* to *max_chars* characters, appending '…' if needed."""
+    if len(text) <= max_chars:
+        return text
+    return text[: max_chars - 1] + "\u2026"
+
+
+def _draw_wrapped_text(
+    c: "rl_canvas.Canvas",
+    text: str,
+    x: float,
+    y: float,
+    max_w: float,
+    font: str = "Helvetica",
+    font_size: float = 8.0,
+    line_h: float = 10.0,
+) -> None:
+    """Draw *text* inside *max_w* points, wrapping at word boundaries."""
+    c.setFont(font, font_size)
+    words = text.split()
+    line = ""
+    cur_y = y
+    for word in words:
+        candidate = f"{line} {word}".strip()
+        if c.stringWidth(candidate, font, font_size) <= max_w:
+            line = candidate
+        else:
+            if line:
+                c.drawString(x, cur_y, line)
+                cur_y -= line_h
+            line = word
+    if line:
+        c.drawString(x, cur_y, line)
+
+
 
 def _draw_mosaic_index(
     c: "rl_canvas.Canvas",
@@ -403,90 +469,152 @@ def _render_cover_page(
     cfg: PDFConfig,
     folder_name: str,
 ) -> None:
-    """Render an atlas cover page with metadata and visual index."""
-    pw = page_w_pt - 2 * margin_pt
-    ph = page_h_pt - 2 * margin_pt
-    lx = margin_pt      # left x
-    by = margin_pt      # bottom y
-    ty = by + ph        # top y
+    """Render a professional atlas cover page with metadata and visual index."""
+    lx = margin_pt                        # printable left x
+    pw = page_w_pt - 2 * margin_pt        # printable width
+    by = margin_pt                        # printable bottom y
+
+    dataset_name = folder_name or "Lot sans titre"
 
     c.saveState()
 
-    # ---- Title block ----
-    c.setFillColorRGB(0.12, 0.25, 0.45)
-    c.rect(lx, ty - 60, pw, 60, fill=1, stroke=0)
+    # ── Accent header bar (full page width, 48 mm tall) ──────────────────────
+    header_h = 48 * mm
+    c.setFillColorRGB(*_COL_ACCENT)
+    c.rect(0, page_h_pt - header_h, page_w_pt, header_h, fill=1, stroke=0)
 
-    c.setFillColorRGB(1, 1, 1)
-    c.setFont("Helvetica-Bold", 16)
-    title = "ATLAS CARTOGRAPHIQUE — GEOIMAGE NOGDAL"
-    c.drawCentredString(lx + pw / 2.0, ty - 22, title)
-    c.setFont("Helvetica", 11)
-    subtitle = f"Lot : {folder_name}" if folder_name else "Lot sans titre"
-    c.drawCentredString(lx + pw / 2.0, ty - 42, subtitle)
+    c.setFillColorRGB(*_COL_WHITE)
+    c.setFont("Helvetica-Bold", 22)
+    c.drawString(lx, page_h_pt - 17 * mm, "Atlas A4 en mosaïque continue")
+    c.setFont("Helvetica", 12)
+    c.drawString(lx, page_h_pt - 26 * mm, dataset_name)
+    c.setFont("Helvetica", 10)
+    c.drawString(
+        lx,
+        page_h_pt - 34 * mm,
+        f"Généré le {datetime.now().strftime('%d/%m/%Y à %H:%M')}",
+    )
 
-    # ---- Metadata block ----
-    n_tiles = len(mosaic.layout.tiles)
-    n_pages = len(pages)
-    psm = mosaic.pixel_size_m
+    # ── Summary box ──────────────────────────────────────────────────────────
+    summary_x = lx
+    summary_y = page_h_pt - 84 * mm   # bottom of box
+    summary_w = pw
+    summary_h = 34 * mm
+    c.setFillColorRGB(*_COL_WHITE)
+    c.setStrokeColorRGB(*_COL_BOX_BORDER)
+    c.setLineWidth(0.8)
+    c.roundRect(summary_x, summary_y, summary_w, summary_h, 8, fill=1, stroke=1)
+
     geo = mosaic.geo_extent
     ground_w_m = cfg.printable_w_mm / _MM_PER_METER * cfg.scale if cfg.scale > 0 else 0.0
     ground_h_m = cfg.image_h_mm / _MM_PER_METER * cfg.scale if cfg.scale > 0 else 0.0
+    mosaic_w_m = (geo.max_x - geo.min_x) if (geo and geo.is_valid()) else 0.0
+    mosaic_h_m = (geo.max_y - geo.min_y) if (geo and geo.is_valid()) else 0.0
 
-    meta_lines = [
-        f"Nombre de tuiles source : {n_tiles}",
-        f"Nombre de feuilles A4 générées : {n_pages}",
-        f"Échelle de sortie : 1 : {cfg.scale:,}" if cfg.scale > 0 else "Échelle : auto",
-        (f"Emprise terrain par feuille : {ground_w_m:,.0f} m × {ground_h_m:,.0f} m"
-         if ground_w_m > 0 else ""),
-        f"Résolution source : {psm:.2f} m/pixel" if psm > 0 else "",
-        f"Dimensions mosaïque : {mosaic.width:,} × {mosaic.height:,} px",
+    info_lines = [
+        f"Échelle fixe : {_format_scale(cfg.scale)}" if cfg.scale > 0 else "Échelle : auto",
+        f"Tuiles source : {len(mosaic.layout.tiles)}    •    Pages atlas : {len(pages)} (+ couverture + vue d'ensemble)"
+        if cfg.atlas_pages else
+        f"Tuiles source : {len(mosaic.layout.tiles)}    •    Pages atlas : {len(pages)}",
     ]
-    if geo and geo.is_valid():
-        meta_lines.append(
-            f"Emprise L93 : X [{geo.min_x:,.0f} – {geo.max_x:,.0f}]"
-            f"  Y [{geo.min_y:,.0f} – {geo.max_y:,.0f}]"
+    if mosaic_w_m > 0 and mosaic_h_m > 0:
+        info_lines.append(
+            f"Mosaïque assemblée : {_format_distance_m(mosaic_w_m)} × {_format_distance_m(mosaic_h_m)}"
+        )
+    if ground_w_m > 0 and ground_h_m > 0:
+        info_lines.append(
+            f"Couverture utile par page : {_format_distance_m(ground_w_m)} × {_format_distance_m(ground_h_m)}"
         )
 
-    meta_lines = [ln for ln in meta_lines if ln]
-
-    c.setFillColorRGB(0.15, 0.15, 0.15)
+    c.setFillColorRGB(*_COL_TEXT)
+    c.setFont("Helvetica-Bold", 11)
+    c.drawString(summary_x + 5 * mm, summary_y + summary_h - 7 * mm, "Résumé de production")
     c.setFont("Helvetica", 9)
-    meta_y = ty - 75
-    line_h = 14
-    for ln in meta_lines:
-        if meta_y < by + 180:
-            break
-        c.drawString(lx + 4, meta_y, ln)
-        meta_y -= line_h
+    line_y = summary_y + summary_h - 13 * mm
+    for line in info_lines:
+        c.drawString(summary_x + 5 * mm, line_y, line)
+        line_y -= 5 * mm
 
-    # ---- Index title ----
-    index_label_y = meta_y - 8
-    c.setFont("Helvetica-Bold", 9)
-    c.setFillColorRGB(0.12, 0.25, 0.45)
-    c.drawString(lx, index_label_y, "INDEX GRAPHIQUE DES FEUILLES")
+    # Source path at bottom of summary
+    psm = mosaic.pixel_size_m
+    psm_txt = f"  —  {psm:.2f} m/px" if psm > 0 else ""
+    c.setFillColorRGB(*_COL_MUTED)
+    c.setFont("Helvetica", 8)
+    c.drawString(summary_x + 5 * mm, summary_y + 3.5 * mm, f"Mosaïque : {mosaic.width:,} × {mosaic.height:,} px{psm_txt}")
 
-    # ---- Visual index ----
-    legend_h = 16
-    idx_top = index_label_y - 4
-    idx_bottom = by + legend_h + 4
-    idx_h = idx_top - idx_bottom
-    if idx_h > 30:
-        _draw_mosaic_index(c, mosaic, pages, lx, idx_bottom, pw, idx_h)
+    # ── Notice box ───────────────────────────────────────────────────────────
+    notice_x = lx
+    notice_y = summary_y - 15 * mm   # below summary
+    notice_w = pw
+    notice_h = 10 * mm
+    c.setFillColorRGB(*_COL_NOTICE_FILL)
+    c.setStrokeColorRGB(*_COL_NOTICE_STROKE)
+    c.setLineWidth(0.6)
+    c.roundRect(notice_x, notice_y, notice_w, notice_h, 5, fill=1, stroke=1)
+    c.setFillColorRGB(*_COL_TEXT)
+    c.setFont("Helvetica-Bold", 8.5)
+    c.drawString(notice_x + 4 * mm, notice_y + 6.1 * mm, "Principe atlas :")
+    c.setFont("Helvetica", 8)
+    c.drawString(
+        notice_x + 28 * mm,
+        notice_y + 6.1 * mm,
+        "toutes les tuiles sont assemblées en mosaïque continue, puis découpées en pages A4"
+        " à échelle constante.",
+    )
+    c.setFont("Helvetica", 8)
+    c.drawString(
+        notice_x + 28 * mm,
+        notice_y + 2.1 * mm,
+        "Imprimer à 100 % (sans mise à l'échelle) pour conserver le rapport cartographique.",
+    )
 
-    # ---- Legend ----
-    c.setFont("Helvetica", 7)
-    c.setFillColorRGB(0.22, 0.47, 0.72)
-    c.rect(lx, by + 4, 10, 6, fill=0, stroke=1)
-    c.setFillColorRGB(0.15, 0.15, 0.15)
-    c.drawString(lx + 13, by + 5, "Tuile source")
-    c.setStrokeColorRGB(0.82, 0.33, 0.05)
+    # ── Legend ───────────────────────────────────────────────────────────────
+    legend_y = notice_y - 6 * mm
+    c.setFillColorRGB(*_COL_TILE_FILL)
+    c.setStrokeColorRGB(*_COL_TILE_STROKE)
+    c.setLineWidth(0.7)
+    c.rect(lx, legend_y, 8 * mm, 4 * mm, fill=1, stroke=1)
+    c.setFillColorRGB(*_COL_TEXT)
+    c.setFont("Helvetica", 8)
+    c.drawString(lx + 10 * mm, legend_y + 1.3 * mm, "Tuiles source assemblées")
+
+    c.setFillColorRGB(*_COL_WHITE)
+    c.setStrokeColorRGB(*_COL_PAGE_STROKE)
+    c.setLineWidth(0.7)
     c.setDash([3, 2])
-    c.rect(lx + 75, by + 4, 10, 6, fill=0, stroke=1)
+    c.rect(lx + 65 * mm, legend_y, 8 * mm, 4 * mm, fill=1, stroke=1)
     c.setDash([])
-    c.setFillColorRGB(0.15, 0.15, 0.15)
-    c.drawString(lx + 88, by + 5, "Feuille A4")
+    c.setFillColorRGB(*_COL_TEXT)
+    c.drawString(lx + 75 * mm, legend_y + 1.3 * mm, "Découpage des pages A4")
+
+    # ── Overview map frame (fills remaining space) ────────────────────────────
+    overview_x = lx
+    overview_y = by + 6 * mm                          # 6 mm above bottom margin
+    overview_w = pw
+    overview_h = max(20.0, legend_y - 4 * mm - overview_y)  # up to just below legend
+    c.setFillColorRGB(*_COL_WHITE)
+    c.setStrokeColorRGB(*_COL_BOX_BORDER)
+    c.setLineWidth(0.8)
+    c.roundRect(overview_x, overview_y, overview_w, overview_h, 8, fill=1, stroke=1)
+
+    c.setFillColorRGB(*_COL_TEXT)
+    c.setFont("Helvetica-Bold", 11)
+    c.drawString(
+        overview_x + 5 * mm,
+        overview_y + overview_h - 8 * mm,
+        "Vue d'ensemble de la mosaïque et pagination",
+    )
+
+    inner_margin = 5 * mm
+    map_x = overview_x + inner_margin
+    map_y = overview_y + inner_margin
+    map_w = overview_w - 2 * inner_margin
+    map_h = overview_h - 14 * mm   # leave room for title above
+    if map_h > 10:
+        _draw_mosaic_index(c, mosaic, pages, map_x, map_y, map_w, map_h)
 
     c.restoreState()
+
 
 
 # ---------------------------------------------------------------------------
@@ -513,17 +641,23 @@ def _render_overview_page(
     c.saveState()
 
     # ---- Header ----
-    hdr_h = 18.0
-    c.setFillColorRGB(0.12, 0.25, 0.45)
-    c.rect(lx, ty - hdr_h, pw, hdr_h, fill=1, stroke=0)
-    c.setFillColorRGB(1, 1, 1)
-    c.setFont("Helvetica-Bold", 10)
+    hdr_h = 14 * mm
+    c.setFillColorRGB(*_COL_ACCENT)
+    c.rect(0, page_h_pt - hdr_h, page_w_pt, hdr_h, fill=1, stroke=0)
+    c.setFillColorRGB(*_COL_WHITE)
+    c.setFont("Helvetica-Bold", 11)
     label = f"Vue d'ensemble — {folder_name}" if folder_name else "Vue d'ensemble"
-    c.drawCentredString(lx + pw / 2.0, ty - hdr_h + 5, label)
+    c.drawCentredString(page_w_pt / 2.0, page_h_pt - hdr_h + 4 * mm, label)
+    c.setFont("Helvetica", 8)
+    c.drawCentredString(
+        page_w_pt / 2.0,
+        page_h_pt - hdr_h + 1.5 * mm,
+        f"{len(mosaic.layout.tiles)} tuile(s) source   •   {len(pages)} page(s) atlas",
+    )
 
     # ---- Mosaic thumbnail ----
     img_area_y = by
-    img_area_h = ph - hdr_h - 2
+    img_area_h = ph - hdr_h - 2 * mm  # 2 mm gap below accent header
     if PIL_AVAILABLE and mosaic.width > 0 and mosaic.height > 0:
         # Compute thumbnail pixel size proportional to the available area
         max_thumb_w = int(pw / PT_PER_INCH * 96)
@@ -686,40 +820,63 @@ def _render_atlas_content_page(
     total_pages: int,
     folder_label: str,
 ) -> None:
-    """Atlas-style content page with fixed scale, Lambert 93 annotations and rich footer."""
+    """Professional atlas content page: accent header, image frame, footer."""
     lx = margin_pt
     by = margin_pt
     ty = by + printable_h_pt
+    pw = printable_w_pt
 
-    # ---- Vertical layout (bottom to top) ----
-    footer_y = by
+    # ── Vertical layout ────────────────────────────────────────────────────
+    # (All values in points; _OVERHEAD_PT = _HEADER_H_PT + _FOOTER_H_PT)
+    footer_y   = by
     footer_top = footer_y + _FOOTER_H_PT
-    tile_row_y = footer_top
-    tile_row_top = tile_row_y + _TILES_H_PT
-    geo_row_y = tile_row_top
-    geo_row_top = geo_row_y + _GEO_H_PT
-    img_y = geo_row_top
-    img_top = ty - _HEADER_H_PT
-    img_h = img_top - img_y
-    img_w = printable_w_pt
+    img_y      = footer_top
+    img_top    = ty - _HEADER_H_PT
+    img_h      = img_top - img_y          # equals cfg.image_h_mm * mm
+    img_w      = pw
+    header_y   = img_top
 
-    # ---- Header bar ----
     c.saveState()
-    c.setFillColorRGB(0.12, 0.25, 0.45)
-    c.rect(lx, img_top, img_w, _HEADER_H_PT, fill=1, stroke=0)
-    c.setFillColorRGB(1, 1, 1)
-    c.setFont("Helvetica-Bold", 8)
-    col_label = f"C{page.col + 1} / L{page.row + 1}"
-    hdr_parts = []
-    if folder_label:
-        hdr_parts.append(folder_label)
-    hdr_parts.append(f"Feuille {page.page_index + 1} / {total_pages}")
-    hdr_parts.append(col_label)
-    hdr_text = "   |   ".join(hdr_parts)
-    c.drawString(lx + 4, img_top + 6, hdr_text)
-    c.restoreState()
 
-    # ---- Map image ----
+    # ── Accent header (rounded rect) ────────────────────────────────────────
+    c.setFillColorRGB(*_COL_ACCENT)
+    c.setStrokeColorRGB(*_COL_ACCENT)
+    c.roundRect(lx, header_y, pw, _HEADER_H_PT, 8, fill=1, stroke=0)
+
+    tile_labels = ", ".join(page.tile_names[:5])
+    if len(page.tile_names) > 5:
+        tile_labels += f" … (+{len(page.tile_names) - 5})"
+
+    c.setFillColorRGB(*_COL_WHITE)
+    c.setFont("Helvetica-Bold", 14)
+    c.drawString(lx + 5 * mm, header_y + _HEADER_H_PT - 6 * mm, folder_label or "Atlas")
+    c.setFont("Helvetica", 8.6)
+    c.drawString(
+        lx + 5 * mm,
+        header_y + _HEADER_H_PT - 11.5 * mm,
+        f"Page {page.page_index + 1}/{total_pages}"
+        f"   \u2022   L{page.row + 1} C{page.col + 1}",
+    )
+    if page.has_geo:
+        c.drawString(
+            lx + 5 * mm,
+            header_y + _HEADER_H_PT - 16.8 * mm,
+            f"Emprise : X\u202f{page.geo_min_x:,.0f}\u202f\u2192\u202f{page.geo_max_x:,.0f} m"
+            f"  |  Y\u202f{page.geo_min_y:,.0f}\u202f\u2192\u202f{page.geo_max_y:,.0f} m",
+        )
+    c.drawString(
+        lx + 5 * mm,
+        header_y + _HEADER_H_PT - 22.1 * mm,
+        f"Tuiles : {_shorten_text(tile_labels or '—', 100)}",
+    )
+
+    # ── Image frame (decorative border around map) ──────────────────────────
+    c.setFillColorRGB(*_COL_WHITE)
+    c.setStrokeColorRGB(*_COL_BOX_BORDER)
+    c.setLineWidth(0.6)
+    c.roundRect(lx, img_y, img_w, img_h, 6, fill=1, stroke=1)
+
+    # ── Map image ──────────────────────────────────────────────────────────
     if img_h > 0 and img_w > 0 and page.src_w > 0 and page.src_h > 0:
         region = mosaic.get_region(page.src_x, page.src_y, page.src_w, page.src_h)
         img_bytes = _pil_to_bytes(region, fmt="JPEG", quality=92)
@@ -733,46 +890,26 @@ def _render_atlas_content_page(
             preserveAspectRatio=False,
         )
 
-    # ---- Separator line above annotation rows ----
-    c.saveState()
-    c.setStrokeColorRGB(0.6, 0.6, 0.6)
-    c.setLineWidth(0.3)
-    c.line(lx, geo_row_top, lx + img_w, geo_row_top)
-    c.line(lx, tile_row_top, lx + img_w, tile_row_top)
-    c.line(lx, footer_top, lx + img_w, footer_top)
+    # ── Footer ────────────────────────────────────────────────────────────
+    c.setStrokeColorRGB(*_COL_BOX_BORDER)
+    c.setLineWidth(0.5)
+    c.line(lx, footer_top, lx + pw, footer_top)
 
-    # ---- Lambert 93 extent row ----
-    c.setFont("Helvetica", 7.5)
-    c.setFillColorRGB(0.1, 0.1, 0.1)
-    if page.has_geo:
-        geo_text = (
-            f"Emprise L93 — "
-            f"X : {page.geo_min_x:,.0f} → {page.geo_max_x:,.0f} m   "
-            f"Y : {page.geo_min_y:,.0f} → {page.geo_max_y:,.0f} m"
-        )
-    else:
-        geo_text = f"Col {page.col + 1} / Lig {page.row + 1}   (position pixel : {page.src_x},{page.src_y})"
-    c.drawString(lx + 2, geo_row_y + 3, geo_text)
-
-    # ---- Tile list row ----
-    tile_text = "Tuiles : " + (", ".join(page.tile_names) if page.tile_names else "—")
-    # Truncate if too long
-    max_chars = int(img_w / _CHAR_WIDTH_APPROX_PT)
-    if len(tile_text) > max_chars:
-        tile_text = tile_text[:max_chars - 3] + "…"
-    c.setFont("Helvetica", 7.5)
-    c.drawString(lx + 2, tile_row_y + 3, tile_text)
-
-    # ---- Footer bar ----
-    c.setFillColorRGB(0.92, 0.92, 0.92)
-    c.rect(lx, footer_y, img_w, _FOOTER_H_PT, fill=1, stroke=0)
-    c.setFillColorRGB(0.2, 0.2, 0.2)
-    c.setFont("Helvetica", 7)
-    c.drawString(lx + 2, footer_y + 4, "Source : IGN")
-    c.drawCentredString(lx + img_w / 2.0, footer_y + 4, f"Page {page.page_index + 1} / {total_pages}")
-    c.setFont("Helvetica-Bold", 7)
-    c.setFillColorRGB(0.65, 0.1, 0.1)
-    c.drawRightString(lx + img_w - 2, footer_y + 4, "IMPRESSION A 100 %")
+    c.setFillColorRGB(*_COL_MUTED)
+    c.setFont("Helvetica", 7.6)
+    tile_path = page.tile_names[0] if page.tile_names else ""
+    c.drawString(lx, footer_y + 2.7 * mm, _shorten_text(tile_path, 60))
+    c.setFillColorRGB(*_COL_TEXT)
+    c.drawCentredString(
+        lx + pw / 2.0,
+        footer_y + 2.7 * mm,
+        f"Imprimer à 100 % pour respecter l'échelle",
+    )
+    c.drawRightString(
+        lx + pw,
+        footer_y + 2.7 * mm,
+        f"PDF {page.page_index + 1}/{total_pages}",
+    )
 
     c.restoreState()
 
