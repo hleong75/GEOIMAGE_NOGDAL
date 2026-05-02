@@ -86,6 +86,15 @@ class MosaicLayout:
 # Image loading helpers
 # ---------------------------------------------------------------------------
 
+def _normalize_to_uint8(arr: "np.ndarray") -> "np.ndarray":
+    """Linearly scale a numpy array to uint8 [0, 255]."""
+    import numpy as np
+    lo, hi = arr.min(), arr.max()
+    if lo == hi:
+        return np.zeros_like(arr, dtype="uint8")
+    return ((arr - lo) / (hi - lo) * 255).astype("uint8")
+
+
 def _open_image(path: Path) -> "Image.Image":
     """Open a raster file as a PIL Image (JPEG2000, GeoTIFF, or standard)."""
     ext = path.suffix.lower()
@@ -108,20 +117,32 @@ def _open_image(path: Path) -> "Image.Image":
 
     if ext in (".tif", ".tiff"):
         if TIFFFILE_AVAILABLE:
-            import numpy as np
-            arr = tifffile.imread(str(path))
-            if arr.ndim == 2:
-                if arr.dtype != "uint8":
-                    arr = ((arr - arr.min()) / max(arr.max() - arr.min(), 1) * 255).astype("uint8")
-                return Image.fromarray(arr, mode="L")
-            if arr.ndim == 3:
-                if arr.shape[0] in (3, 4) and arr.shape[0] < arr.shape[2]:
-                    arr = arr.transpose(1, 2, 0)
-                if arr.dtype != "uint8":
-                    arr = ((arr - arr.min()) / max(arr.max() - arr.min(), 1) * 255).astype("uint8")
-                mode = "RGB" if arr.shape[2] == 3 else "RGBA"
-                img = Image.fromarray(arr, mode=mode)
-                return img.convert("RGB")
+            try:
+                import numpy as np
+                arr = tifffile.imread(str(path))
+                if arr.ndim == 2:
+                    if arr.dtype != "uint8":
+                        arr = _normalize_to_uint8(arr)
+                    return Image.fromarray(arr, mode="L")
+                if arr.ndim == 3:
+                    if arr.shape[0] in (3, 4) and arr.shape[0] < arr.shape[2]:
+                        arr = arr.transpose(1, 2, 0)
+                    # Squeeze single-band 3D arrays to 2D grayscale
+                    if arr.shape[2] == 1:
+                        arr = arr[:, :, 0]
+                        if arr.dtype != "uint8":
+                            arr = _normalize_to_uint8(arr)
+                        return Image.fromarray(arr, mode="L")
+                    if arr.dtype != "uint8":
+                        arr = _normalize_to_uint8(arr)
+                    mode = "RGB" if arr.shape[2] == 3 else "RGBA"
+                    img = Image.fromarray(arr, mode=mode)
+                    return img.convert("RGB")
+            except (OSError, ValueError, RuntimeError, Exception) as exc:
+                # tifffile can raise tifffile.TiffFileError (a subclass of Exception)
+                # or other errors for unsupported formats / corrupted files.
+                # Fall back to PIL for any failure so the tile is not silently dropped.
+                logger.debug("tifffile failed for %s, falling back to PIL: %s", path, exc)
         if PIL_AVAILABLE:
             return Image.open(str(path)).convert("RGB")
 
