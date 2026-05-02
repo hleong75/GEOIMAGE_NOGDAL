@@ -97,6 +97,8 @@ class MosaicLayout:
 def _normalize_to_uint8(arr: "np.ndarray") -> "np.ndarray":
     """Linearly scale a numpy array to uint8 [0, 255]."""
     import numpy as np
+    # Replace NaN and infinite values before computing statistics
+    arr = np.nan_to_num(arr, nan=0.0, posinf=255.0, neginf=0.0)
     lo, hi = arr.min(), arr.max()
     if lo == hi:
         return np.zeros_like(arr, dtype="uint8")
@@ -109,18 +111,21 @@ def _open_image(path: Path) -> "Image.Image":
 
     if ext == ".jp2":
         if GLYMUR_AVAILABLE:
-            import numpy as np
-            jp2 = glymur.Jp2k(str(path))
-            arr = jp2[:]
-            if arr.ndim == 2:
-                return Image.fromarray(arr, mode="L")
-            elif arr.shape[2] == 4:
-                return Image.fromarray(arr, mode="RGBA").convert("RGB")
-            else:
-                return Image.fromarray(arr, mode="RGB")
+            try:
+                import numpy as np
+                jp2 = glymur.Jp2k(str(path))
+                arr = jp2[:]
+                if arr.ndim == 2:
+                    return Image.fromarray(arr, mode="L")
+                elif arr.shape[2] == 4:
+                    return Image.fromarray(arr, mode="RGBA").convert("RGB")
+                else:
+                    return Image.fromarray(arr, mode="RGB")
+            except Exception as exc:
+                logger.debug("glymur failed for %s, falling back to PIL: %s", path, exc)
         # Fallback: try Pillow's built-in JPEG2000 (needs openjpeg)
         if PIL_AVAILABLE:
-            return Image.open(str(path))
+            return Image.open(str(path)).convert("RGB")
         raise RuntimeError(f"Cannot open JP2 file — install glymur: {path}")
 
     if ext in (".tif", ".tiff"):
@@ -567,11 +572,10 @@ class Mosaic:
         thumb_w = max(1, int(self.width * scale))
         thumb_h = max(1, int(self.height * scale))
 
-        # Load a rough thumbnail: sample every Nth tile
+        # Load all tiles so the thumbnail is always complete (no gaps).
         canvas = Image.new("RGB", (thumb_w, thumb_h), color=(200, 200, 200))
-        step = max(1, len(self.layout.tiles) // 16)
 
-        for tile in self.layout.tiles[::step]:
+        for tile in self.layout.tiles:
             try:
                 img = _open_image(tile.path)
                 img.thumbnail((max(1, int(tile.width * scale)), max(1, int(tile.height * scale))), Image.LANCZOS)

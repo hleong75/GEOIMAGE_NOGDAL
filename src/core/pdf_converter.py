@@ -225,6 +225,9 @@ def compute_pages_at_scale(mosaic: Mosaic, cfg: PDFConfig) -> List[PageInfo]:
     Uses geographic extents (Lambert 93 from .tab / GeoTIFF) when available.
     The map image area on each page is ``cfg.printable_w_mm × cfg.image_h_mm``,
     which at scale 1:S covers a fixed ground area regardless of tile count.
+    Adjacent pages overlap by ``cfg.overlap_mm`` (same semantics as
+    ``compute_pages``): each page starts ``ground_w - overlap_ground`` metres
+    after the previous one, ensuring a visible margin of repeated content.
 
     Falls back to ``compute_pages()`` when no georef or scale is available.
     """
@@ -240,29 +243,38 @@ def compute_pages_at_scale(mosaic: Mosaic, cfg: PDFConfig) -> List[PageInfo]:
     src_w = max(1, int(round(ground_w / psm)))
     src_h = max(1, int(round(ground_h / psm)))
 
+    # Overlap between adjacent pages in metres (overlap_mm on paper at scale S)
+    overlap_m = cfg.overlap_mm / _MM_PER_METER * cfg.scale
+    # Convert to source pixels; clamp so stride stays at least 1
+    overlap_src_px = max(0, min(int(round(overlap_m / psm)), min(src_w, src_h) - 1))
+    stride_w = max(1, src_w - overlap_src_px)
+    stride_h = max(1, src_h - overlap_src_px)
+    stride_m_w = max(1.0, ground_w - overlap_m)
+    stride_m_h = max(1.0, ground_h - overlap_m)
+
     # Number of pages from geographic extent (preferred) or pixel size
     geo = mosaic.geo_extent
     if geo is not None and geo.is_valid():
-        cols = max(1, math.ceil(geo.width_m / ground_w))
-        rows = max(1, math.ceil(geo.height_m / ground_h))
+        cols = max(1, math.ceil((geo.width_m - overlap_m) / stride_m_w))
+        rows = max(1, math.ceil((geo.height_m - overlap_m) / stride_m_h))
     else:
-        cols = max(1, math.ceil(mosaic.width / src_w))
-        rows = max(1, math.ceil(mosaic.height / src_h))
+        cols = max(1, math.ceil((mosaic.width - overlap_src_px) / stride_w))
+        rows = max(1, math.ceil((mosaic.height - overlap_src_px) / stride_h))
 
     pages: list[PageInfo] = []
     idx = 0
     for row in range(rows):
         for col in range(cols):
-            src_x = col * src_w
-            src_y = row * src_h
+            src_x = col * stride_w
+            src_y = row * stride_h
 
             # Lambert 93 extents for this page
             has_geo = False
             page_min_x = page_min_y = page_max_x = page_max_y = 0.0
             if geo is not None and geo.is_valid():
-                page_min_x = geo.min_x + col * ground_w
+                page_min_x = geo.min_x + col * stride_m_w
                 page_max_x = page_min_x + ground_w
-                page_max_y = geo.max_y - row * ground_h
+                page_max_y = geo.max_y - row * stride_m_h
                 page_min_y = page_max_y - ground_h
                 has_geo = True
 

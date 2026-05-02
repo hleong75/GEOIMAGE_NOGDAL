@@ -290,4 +290,80 @@ def test_compute_pages_at_scale_landscape():
         assert p.src_w >= p.src_h
 
 
+def test_compute_pages_at_scale_overlap_applied():
+    """Overlap is applied in scale-based mode: adjacent pages share source pixels."""
+    pixel_size_m = 2.5
+    overlap_mm = 10.0
+    cfg_ov = PDFConfig(dpi=300, orientation=Orientation.PORTRAIT, margin_mm=10.0,
+                       scale=25000, overlap_mm=overlap_mm)
+    cfg_no = PDFConfig(dpi=300, orientation=Orientation.PORTRAIT, margin_mm=10.0,
+                       scale=25000, overlap_mm=0.0)
+
+    ground_w = cfg_ov.printable_w_mm / 1000.0 * cfg_ov.scale
+    ground_h = cfg_ov.image_h_mm / 1000.0 * cfg_ov.scale
+
+    # Mosaic wide and tall enough to need at least 2 columns and 2 rows
+    w_px = int((ground_w * 2 + 100) / pixel_size_m)
+    h_px = int((ground_h * 2 + 100) / pixel_size_m)
+    mosaic = _make_georef_mosaic(w_px, h_px, pixel_size_m=pixel_size_m)
+
+    pages_ov = compute_pages_at_scale(mosaic, cfg_ov)
+    pages_no = compute_pages_at_scale(mosaic, cfg_no)
+
+    # With overlap, there should be at least as many pages as without
+    assert len(pages_ov) >= len(pages_no)
+
+    # All pages share the same src_w / src_h regardless of overlap
+    assert len({p.src_w for p in pages_ov}) == 1
+    assert len({p.src_h for p in pages_ov}) == 1
+
+    # Adjacent columns must overlap in source pixels
+    col0 = next(p for p in pages_ov if p.col == 0 and p.row == 0)
+    col1 = next(p for p in pages_ov if p.col == 1 and p.row == 0)
+    assert col0.src_x + col0.src_w > col1.src_x, "Adjacent pages should share source pixels"
+
+    # Expected stride: src_w - round(overlap_m / psm)
+    overlap_m = overlap_mm / 1000.0 * cfg_ov.scale
+    expected_stride = col0.src_w - int(round(overlap_m / pixel_size_m))
+    assert col1.src_x == expected_stride
+
+    # Adjacent rows must also overlap in source pixels
+    row0 = next(p for p in pages_ov if p.col == 0 and p.row == 0)
+    row1 = next(p for p in pages_ov if p.col == 0 and p.row == 1)
+    assert row0.src_y + row0.src_h > row1.src_y, "Adjacent rows should share source pixels"
+
+    # Without overlap, pages must be exactly adjacent (no shared pixels)
+    col0_no = next(p for p in pages_no if p.col == 0 and p.row == 0)
+    col1_no = next(p for p in pages_no if p.col == 1 and p.row == 0)
+    assert col0_no.src_x + col0_no.src_w == col1_no.src_x, "No-overlap pages must be exactly adjacent"
+
+
+def test_compute_pages_at_scale_overlap_geo_extents():
+    """With overlap, Lambert 93 extents per page are shifted by the stride (not full ground_w)."""
+    pixel_size_m = 2.5
+    overlap_mm = 10.0
+    cfg = PDFConfig(dpi=300, orientation=Orientation.PORTRAIT, margin_mm=10.0,
+                    scale=25000, overlap_mm=overlap_mm)
+
+    ground_w = cfg.printable_w_mm / 1000.0 * cfg.scale
+    ground_h = cfg.image_h_mm / 1000.0 * cfg.scale
+    overlap_m = overlap_mm / 1000.0 * cfg.scale
+    stride_m = ground_w - overlap_m
+
+    w_px = int((ground_w * 2 + 100) / pixel_size_m)
+    h_px = int(ground_h / pixel_size_m)
+    mosaic = _make_georef_mosaic(w_px, h_px, pixel_size_m=pixel_size_m, min_x=700000.0)
+
+    pages = compute_pages_at_scale(mosaic, cfg)
+
+    col0 = next(p for p in pages if p.col == 0 and p.row == 0)
+    col1 = next(p for p in pages if p.col == 1 and p.row == 0)
+
+    assert col0.has_geo
+    assert col1.has_geo
+    # col1 geo_min_x should be col0.geo_min_x + stride_m (not + ground_w)
+    assert abs(col1.geo_min_x - (col0.geo_min_x + stride_m)) < 1.0
+    # Each page covers exactly ground_w metres
+    assert abs(col0.geo_max_x - col0.geo_min_x - ground_w) < 1.0
+    assert abs(col1.geo_max_x - col1.geo_min_x - ground_w) < 1.0
 
