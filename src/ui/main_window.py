@@ -92,6 +92,7 @@ class _ConvertWorker(QObject):
                 dpi=self._sp.dpi,
                 orientation=self._sp.orientation,
                 margin_mm=self._sp.margin_mm,
+                overlap_mm=self._sp.overlap_mm,
                 output_path=out_path,
             )
 

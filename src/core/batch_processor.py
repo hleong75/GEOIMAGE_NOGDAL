@@ -36,6 +36,7 @@ class BatchJob:
     dpi: int = 300
     orientation: Orientation = Orientation.PORTRAIT
     margin_mm: float = 10.0
+    overlap_mm: float = 5.0
 
     status: JobStatus = JobStatus.PENDING
     progress: float = 0.0          # 0.0 – 1.0
@@ -164,6 +165,7 @@ class BatchProcessor:
                 dpi=job.dpi,
                 orientation=job.orientation,
                 margin_mm=job.margin_mm,
+                overlap_mm=job.overlap_mm,
                 output_path=out_path,
             )
 
