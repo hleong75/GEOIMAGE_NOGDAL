@@ -88,6 +88,7 @@ def run_cli(args: argparse.Namespace) -> int:
         dpi=args.dpi,
         orientation=orientation,
         margin_mm=args.margin,
+        scale=args.scale,
         output_path=out_path,
     )
 
@@ -111,6 +112,7 @@ def main() -> None:
     parser.add_argument("--dpi", type=int, default=300, help="DPI (default: 300)")
     parser.add_argument("--landscape", action="store_true", help="Landscape orientation")
     parser.add_argument("--margin", type=float, default=10.0, help="Margin in mm")
+    parser.add_argument("--scale", type=int, default=25000, help="Map scale denominator (default: 25000 for 1:25 000)")
 
     args = parser.parse_args()
 

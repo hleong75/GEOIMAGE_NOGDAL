@@ -121,4 +121,89 @@ def test_filename_mosaic_empty():
     assert len(layout.tiles) == 0
 
 
+# ---------------------------------------------------------------------------
+# Georef-based mosaic assembly
+# ---------------------------------------------------------------------------
+
+def test_georef_mosaic_nonexistent_files():
+    """build_mosaic_from_georef_files returns None when no georef can be read."""
+    from src.core.mosaic import build_mosaic_from_georef_files
+    result = build_mosaic_from_georef_files([Path("/nonexistent/tile.tif")])
+    assert result is None
+
+
+def test_georef_mosaic_from_tab_files():
+    """build_mosaic_from_georef_files uses .tab side-car files for positioning."""
+    import tempfile
+    from src.core.mosaic import build_mosaic_from_georef_files
+
+    _TAB_TEMPLATE = """!table
+!version 300
+!charset WindowsLatin1
+Definition Table
+  File "{name}.tif"
+  Type "RASTER"
+  ({xmin},{ymax}) (0,0) Label "Pt 1"
+  ({xmax},{ymax}) ({wpx},0) Label "Pt 2"
+  ({xmax},{ymin}) ({wpx},{hpx}) Label "Pt 3"
+  ({xmin},{ymin}) (0,{hpx}) Label "Pt 4"
+  CoordSys Earth Projection 3, 33, "m", 3, 46.5
+"""
+    # Two tiles side by side: tile1 at x=700..800 km, tile2 at x=800..900 km
+    tiles_data = [
+        dict(name="tile1", xmin=700000, xmax=800000, ymin=6120000, ymax=6220000, wpx=10000, hpx=10000),
+        dict(name="tile2", xmin=800000, xmax=900000, ymin=6120000, ymax=6220000, wpx=10000, hpx=10000),
+    ]
+
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_p = Path(tmp)
+        tile_paths = []
+        for td in tiles_data:
+            tif_path = tmp_p / f"{td['name']}.tif"
+            tab_path = tmp_p / f"{td['name']}.tab"
+            tif_path.write_bytes(b"\x00" * 16)   # dummy image
+            tab_path.write_text(_TAB_TEMPLATE.format(**td), encoding="latin-1")
+            tile_paths.append(tif_path)
+
+        layout = build_mosaic_from_georef_files(tile_paths)
+
+    assert layout is not None
+    # Total width = 200 km at 10 m/px = 20 000 px; height = 100 km = 10 000 px
+    assert layout.total_width == 20000
+    assert layout.total_height == 10000
+    assert len(layout.tiles) == 2
+    assert abs(layout.pixel_size_m - 10.0) < 0.1
+
+    # tile1 at x_off=0, tile2 at x_off=10000
+    t1 = next(t for t in layout.tiles if t.x_off == 0)
+    t2 = next(t for t in layout.tiles if t.x_off == 10000)
+    assert t1.width == 10000
+    assert t2.width == 10000
+
+    # Global geo extent
+    assert layout.geo_extent is not None
+    assert abs(layout.geo_extent.min_x - 700000.0) < 1.0
+    assert abs(layout.geo_extent.max_x - 900000.0) < 1.0
+
+
+def test_mosaic_from_files_tries_georef():
+    """Mosaic.from_files with try_georef=False falls back to filename layout."""
+    import tempfile
+    from src.core.mosaic import Mosaic
+    from PIL import Image as _PIL_Image
+
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_p = Path(tmp)
+        # Create a minimal valid 1×1 TIFF with IGN naming (no .tab file)
+        tif = tmp_p / "SC25_TOUR_0700_6220_L93_E100.tif"
+        _PIL_Image.new("RGB", (4, 4), color=(128, 128, 128)).save(str(tif))
+
+        # With try_georef=False → goes directly to filename-based layout
+        mosaic = Mosaic.from_files([tif], pixel_size_m=2.5, try_georef=False)
+
+    assert mosaic is not None
+    # No geo_extent: filename-based layout doesn't set one
+    assert mosaic.geo_extent is None
+
+
 
