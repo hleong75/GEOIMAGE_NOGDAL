@@ -843,9 +843,9 @@ def _render_atlas_content_page(
     c.setStrokeColorRGB(*_COL_ACCENT)
     c.roundRect(lx, header_y, pw, _HEADER_H_PT, 8, fill=1, stroke=0)
 
-    tile_labels = ", ".join(page.tile_names[:5])
-    if len(page.tile_names) > 5:
-        tile_labels += f" … (+{len(page.tile_names) - 5})"
+    tile_labels = ", ".join(page.tile_names[:_MAX_HEADER_TILES])
+    if len(page.tile_names) > _MAX_HEADER_TILES:
+        tile_labels += f" … (+{len(page.tile_names) - _MAX_HEADER_TILES})"
 
     c.setFillColorRGB(*_COL_WHITE)
     c.setFont("Helvetica-Bold", 14)
@@ -897,8 +897,8 @@ def _render_atlas_content_page(
 
     c.setFillColorRGB(*_COL_MUTED)
     c.setFont("Helvetica", 7.6)
-    tile_path = page.tile_names[0] if page.tile_names else ""
-    c.drawString(lx, footer_y + 2.7 * mm, _shorten_text(tile_path, 60))
+    first_tile_name = page.tile_names[0] if page.tile_names else ""
+    c.drawString(lx, footer_y + 2.7 * mm, _shorten_text(first_tile_name, 60))
     c.setFillColorRGB(*_COL_TEXT)
     c.drawCentredString(
         lx + pw / 2.0,
