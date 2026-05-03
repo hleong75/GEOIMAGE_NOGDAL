@@ -98,6 +98,9 @@ _MIN_OVERVIEW_H_PT = 20.0
 # Space reserved above the overview map for its title (14 mm in points)
 _OVERVIEW_TITLE_SPACE_PT = 14 * PT_PER_INCH / MM_PER_INCH
 
+# Minimum drawing height (points) below which the mosaic index is skipped
+_MIN_MAP_H_TO_DRAW_PT = 10.0
+
 @dataclass
 class PDFConfig:
     """Configuration for PDF export."""
@@ -490,7 +493,10 @@ def _render_cover_page(
     c.setFillColorRGB(*_COL_ACCENT)
     c.rect(0, page_h_pt - header_h, page_w_pt, header_h, fill=1, stroke=0)
 
-    ts = generation_time or datetime.now()
+    # generation_time is normally provided by convert_folders_to_pdf (captured once
+    # before any page is rendered).  The fallback to datetime.now() is intentional
+    # for callers that invoke _render_cover_page directly without a timestamp.
+    ts = generation_time if generation_time is not None else datetime.now()
     c.setFillColorRGB(*_COL_WHITE)
     c.setFont("Helvetica-Bold", 22)
     c.drawString(lx, page_h_pt - 17 * mm, "Atlas A4 en mosaïque continue")
@@ -521,10 +527,11 @@ def _render_cover_page(
 
     info_lines = [
         f"Échelle fixe : {_format_scale(cfg.scale)}" if cfg.scale > 0 else "Échelle : auto",
-        f"Tuiles source : {len(mosaic.layout.tiles)}    •    Pages atlas : {len(pages)} (+ couverture + vue d'ensemble)"
-        if cfg.atlas_pages else
-        f"Tuiles source : {len(mosaic.layout.tiles)}    •    Pages atlas : {len(pages)}",
     ]
+    tiles_pages_base = f"Tuiles source : {len(mosaic.layout.tiles)}    •    Pages atlas : {len(pages)}"
+    info_lines.append(
+        tiles_pages_base + " (+ couverture + vue d'ensemble)" if cfg.atlas_pages else tiles_pages_base
+    )
     if mosaic_w_m > 0 and mosaic_h_m > 0:
         info_lines.append(
             f"Mosaïque assemblée : {_format_distance_m(mosaic_w_m)} × {_format_distance_m(mosaic_h_m)}"
@@ -618,7 +625,7 @@ def _render_cover_page(
     map_y = overview_y + inner_margin
     map_w = overview_w - 2 * inner_margin
     map_h = overview_h - _OVERVIEW_TITLE_SPACE_PT
-    if map_h > 10:
+    if map_h > _MIN_MAP_H_TO_DRAW_PT:
         _draw_mosaic_index(c, mosaic, pages, map_x, map_y, map_w, map_h)
 
     c.restoreState()
@@ -852,6 +859,8 @@ def _render_atlas_content_page(
     c.roundRect(lx, header_y, pw, _HEADER_H_PT, 8, fill=1, stroke=0)
 
     tile_labels = ", ".join(page.tile_names[:_MAX_HEADER_TILES])
+    # remaining_tiles is negative when fewer than _MAX_HEADER_TILES tiles are present;
+    # the `> 0` guard ensures the suffix is only appended when tiles were truncated.
     remaining_tiles = len(page.tile_names) - _MAX_HEADER_TILES
     if remaining_tiles > 0:
         tile_labels += f" … (+{remaining_tiles})"
