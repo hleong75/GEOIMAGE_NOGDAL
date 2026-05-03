@@ -342,8 +342,8 @@ def _pil_to_bytes(img: "Image.Image", fmt: str = "JPEG", quality: int = 90) -> b
 # ---------------------------------------------------------------------------
 
 def _format_scale(scale_value: int) -> str:
-    """Return a human-readable scale string such as '1 : 25 000'."""
-    return f"1\u202f:\u202f{scale_value:,}".replace(",", "\u202f")
+    """Return a human-readable scale string such as '1\u00a0:\u00a025\u00a0000' (non-breaking spaces)."""
+    return f"1\xa0:\xa0{scale_value:,}".replace(",", "\xa0")
 
 
 def _format_distance_m(meters: float) -> str:
@@ -483,15 +483,17 @@ def _render_cover_page(
     lx = margin_pt                        # printable left x
     pw = page_w_pt - 2 * margin_pt        # printable width
     by = margin_pt                        # printable bottom y
+    top_y = page_h_pt - margin_pt         # printable top y (uniform margin on all sides)
 
     dataset_name = folder_name or "Lot sans titre"
 
     c.saveState()
 
-    # ── Accent header bar (full page width, 48 mm tall) ──────────────────────
+    # ── Accent header box (uniform margin on all four sides, 48 mm tall) ─────
     header_h = 48 * mm
+    header_bottom = top_y - header_h
     c.setFillColorRGB(*_COL_ACCENT)
-    c.rect(0, page_h_pt - header_h, page_w_pt, header_h, fill=1, stroke=0)
+    c.roundRect(lx, header_bottom, pw, header_h, 6, fill=1, stroke=0)
 
     # generation_time is normally provided by convert_folders_to_pdf (captured once
     # before any page is rendered).  The fallback to datetime.now() is intentional
@@ -499,19 +501,19 @@ def _render_cover_page(
     ts = generation_time if generation_time is not None else datetime.now()
     c.setFillColorRGB(*_COL_WHITE)
     c.setFont("Helvetica-Bold", 22)
-    c.drawString(lx, page_h_pt - 17 * mm, "Atlas A4 en mosaïque continue")
+    c.drawString(lx + 5 * mm, top_y - 17 * mm, "ATLAS A4 EN MOSAÏQUE CONTINUE")
     c.setFont("Helvetica", 12)
-    c.drawString(lx, page_h_pt - 26 * mm, dataset_name)
+    c.drawString(lx + 5 * mm, top_y - 27 * mm, dataset_name)
     c.setFont("Helvetica", 10)
     c.drawString(
-        lx,
-        page_h_pt - 34 * mm,
+        lx + 5 * mm,
+        top_y - 36 * mm,
         f"Généré le {ts.strftime('%d/%m/%Y à %H:%M')}",
     )
 
     # ── Summary box ──────────────────────────────────────────────────────────
     summary_x = lx
-    summary_y = page_h_pt - 84 * mm   # bottom of box
+    summary_y = header_bottom - 42 * mm   # 8 mm gap below header + 34 mm box height
     summary_w = pw
     summary_h = 34 * mm
     c.setFillColorRGB(*_COL_WHITE)
@@ -543,7 +545,7 @@ def _render_cover_page(
 
     c.setFillColorRGB(*_COL_TEXT)
     c.setFont("Helvetica-Bold", 11)
-    c.drawString(summary_x + 5 * mm, summary_y + summary_h - 7 * mm, "Résumé de production")
+    c.drawString(summary_x + 5 * mm, summary_y + summary_h - 7 * mm, "RÉSUMÉ DE PRODUCTION")
     c.setFont("Helvetica", 9)
     line_y = summary_y + summary_h - 13 * mm
     for line in info_lines:
@@ -604,7 +606,7 @@ def _render_cover_page(
 
     # ── Overview map frame (fills remaining space) ────────────────────────────
     overview_x = lx
-    overview_y = by + 6 * mm                                        # 6 mm above bottom margin
+    overview_y = by                                                     # uniform bottom margin
     overview_w = pw
     overview_h = max(_MIN_OVERVIEW_H_PT, legend_y - 4 * mm - overview_y)
     c.setFillColorRGB(*_COL_WHITE)
@@ -617,7 +619,7 @@ def _render_cover_page(
     c.drawString(
         overview_x + 5 * mm,
         overview_y + overview_h - 8 * mm,
-        "Vue d'ensemble de la mosaïque et pagination",
+        "VUE D'ENSEMBLE DE LA MOSAÏQUE ET PAGINATION",
     )
 
     inner_margin = 5 * mm
