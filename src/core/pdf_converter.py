@@ -342,7 +342,7 @@ def _pil_to_bytes(img: "Image.Image", fmt: str = "JPEG", quality: int = 90) -> b
 # ---------------------------------------------------------------------------
 
 def _format_scale(scale_value: int) -> str:
-    """Return a human-readable scale string such as '1\u00a0:\u00a025\u00a0000' (non-breaking spaces)."""
+    """Return a human-readable scale string such as '1 : 25 000' (using non-breaking spaces)."""
     return f"1\xa0:\xa0{scale_value:,}".replace(",", "\xa0")
 
 
@@ -499,14 +499,15 @@ def _render_cover_page(
     # before any page is rendered).  The fallback to datetime.now() is intentional
     # for callers that invoke _render_cover_page directly without a timestamp.
     ts = generation_time if generation_time is not None else datetime.now()
+    header_text_pad = 5 * mm                           # inner left padding inside header box
     c.setFillColorRGB(*_COL_WHITE)
     c.setFont("Helvetica-Bold", 22)
-    c.drawString(lx + 5 * mm, top_y - 17 * mm, "ATLAS A4 EN MOSAÏQUE CONTINUE")
+    c.drawString(lx + header_text_pad, top_y - 17 * mm, "ATLAS A4 EN MOSAÏQUE CONTINUE")
     c.setFont("Helvetica", 12)
-    c.drawString(lx + 5 * mm, top_y - 27 * mm, dataset_name)
+    c.drawString(lx + header_text_pad, top_y - 27 * mm, dataset_name)
     c.setFont("Helvetica", 10)
     c.drawString(
-        lx + 5 * mm,
+        lx + header_text_pad,
         top_y - 36 * mm,
         f"Généré le {ts.strftime('%d/%m/%Y à %H:%M')}",
     )
