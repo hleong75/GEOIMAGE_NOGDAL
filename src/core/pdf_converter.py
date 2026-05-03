@@ -92,6 +92,12 @@ _CHAR_WIDTH_APPROX_PT = 4.5
 # Maximum number of tile names shown inline in the page header
 _MAX_HEADER_TILES = 5
 
+# Minimum height (points) of the overview map frame on the cover page
+_MIN_OVERVIEW_H_PT = 20.0
+
+# Space reserved above the overview map for its title (14 mm in points)
+_OVERVIEW_TITLE_SPACE_PT = 14 * PT_PER_INCH / MM_PER_INCH
+
 @dataclass
 class PDFConfig:
     """Configuration for PDF export."""
@@ -468,6 +474,7 @@ def _render_cover_page(
     margin_pt: float,
     cfg: PDFConfig,
     folder_name: str,
+    generation_time: Optional[datetime] = None,
 ) -> None:
     """Render a professional atlas cover page with metadata and visual index."""
     lx = margin_pt                        # printable left x
@@ -483,6 +490,7 @@ def _render_cover_page(
     c.setFillColorRGB(*_COL_ACCENT)
     c.rect(0, page_h_pt - header_h, page_w_pt, header_h, fill=1, stroke=0)
 
+    ts = generation_time or datetime.now()
     c.setFillColorRGB(*_COL_WHITE)
     c.setFont("Helvetica-Bold", 22)
     c.drawString(lx, page_h_pt - 17 * mm, "Atlas A4 en mosaïque continue")
@@ -492,7 +500,7 @@ def _render_cover_page(
     c.drawString(
         lx,
         page_h_pt - 34 * mm,
-        f"Généré le {datetime.now().strftime('%d/%m/%Y à %H:%M')}",
+        f"Généré le {ts.strftime('%d/%m/%Y à %H:%M')}",
     )
 
     # ── Summary box ──────────────────────────────────────────────────────────
@@ -589,9 +597,9 @@ def _render_cover_page(
 
     # ── Overview map frame (fills remaining space) ────────────────────────────
     overview_x = lx
-    overview_y = by + 6 * mm                          # 6 mm above bottom margin
+    overview_y = by + 6 * mm                                        # 6 mm above bottom margin
     overview_w = pw
-    overview_h = max(20.0, legend_y - 4 * mm - overview_y)  # up to just below legend
+    overview_h = max(_MIN_OVERVIEW_H_PT, legend_y - 4 * mm - overview_y)
     c.setFillColorRGB(*_COL_WHITE)
     c.setStrokeColorRGB(*_COL_BOX_BORDER)
     c.setLineWidth(0.8)
@@ -609,7 +617,7 @@ def _render_cover_page(
     map_x = overview_x + inner_margin
     map_y = overview_y + inner_margin
     map_w = overview_w - 2 * inner_margin
-    map_h = overview_h - 14 * mm   # leave room for title above
+    map_h = overview_h - _OVERVIEW_TITLE_SPACE_PT
     if map_h > 10:
         _draw_mosaic_index(c, mosaic, pages, map_x, map_y, map_w, map_h)
 
@@ -844,8 +852,9 @@ def _render_atlas_content_page(
     c.roundRect(lx, header_y, pw, _HEADER_H_PT, 8, fill=1, stroke=0)
 
     tile_labels = ", ".join(page.tile_names[:_MAX_HEADER_TILES])
-    if len(page.tile_names) > _MAX_HEADER_TILES:
-        tile_labels += f" … (+{len(page.tile_names) - _MAX_HEADER_TILES})"
+    remaining_tiles = len(page.tile_names) - _MAX_HEADER_TILES
+    if remaining_tiles > 0:
+        tile_labels += f" … (+{remaining_tiles})"
 
     c.setFillColorRGB(*_COL_WHITE)
     c.setFont("Helvetica-Bold", 14)
@@ -1018,6 +1027,9 @@ def convert_folders_to_pdf(
     if total_steps == 0:
         raise ValueError("Toutes les mosaïques ont une taille nulle — rien à convertir.")
 
+    # Capture generation timestamp once for all cover pages in this PDF
+    generation_time = datetime.now()
+
     step = 0
     for folder_name, mosaic, pages, use_scale in folder_data:
         n_content = len(pages)
@@ -1027,7 +1039,8 @@ def convert_folders_to_pdf(
             if progress_callback:
                 progress_callback(step, total_steps, "Génération page de garde…")
             _render_cover_page(
-                c, mosaic, pages, page_w_pt, page_h_pt, margin_pt, cfg, folder_name
+                c, mosaic, pages, page_w_pt, page_h_pt, margin_pt, cfg, folder_name,
+                generation_time=generation_time,
             )
             c.showPage()
             step += 1
