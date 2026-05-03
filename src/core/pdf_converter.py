@@ -116,6 +116,8 @@ class PDFConfig:
     scale: int = 25000
     # Whether to prepend cover + overview pages to each folder's section.
     atlas_pages: bool = True
+    # Title displayed on the cover page header (user-customisable).
+    atlas_title: str = "Atlas A4 en mosaïque continue"
 
     @property
     def page_w_mm(self) -> float:
@@ -502,7 +504,7 @@ def _render_cover_page(
     header_text_pad = 5 * mm                           # inner left padding inside header box
     c.setFillColorRGB(*_COL_WHITE)
     c.setFont("Helvetica-Bold", 22)
-    c.drawString(lx + header_text_pad, top_y - 17 * mm, "ATLAS A4 EN MOSAÏQUE CONTINUE")
+    c.drawString(lx + header_text_pad, top_y - 17 * mm, cfg.atlas_title.upper())
     c.setFont("Helvetica", 12)
     c.drawString(lx + header_text_pad, top_y - 27 * mm, dataset_name)
     c.setFont("Helvetica", 10)

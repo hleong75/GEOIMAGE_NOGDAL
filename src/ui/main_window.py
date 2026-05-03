@@ -94,6 +94,7 @@ class _ConvertWorker(QObject):
                 margin_mm=self._sp.margin_mm,
                 overlap_mm=self._sp.overlap_mm,
                 output_path=out_path,
+                atlas_title=self._sp.atlas_title,
             )
 
             def cb(cur: int, total: int, msg: str) -> None:
