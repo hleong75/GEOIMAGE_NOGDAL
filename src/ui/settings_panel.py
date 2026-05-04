@@ -64,6 +64,10 @@ class SettingsPanel(QWidget):
         return self._overlap_spin.value()
 
     @property
+    def atlas_title(self) -> str:
+        return self._title_edit.text().strip() or "Atlas A4 en mosaïque continue"
+
+    @property
     def output_dir(self) -> Path:
         return Path(self._output_edit.text() or ".")
 
@@ -105,6 +109,13 @@ class SettingsPanel(QWidget):
             "Chevauchement entre pages adjacentes (évite les coupures nettes sur les bords)"
         )
         form.addRow("Chevauchement :", self._overlap_spin)
+
+        self._title_edit = QLineEdit()
+        self._title_edit.setPlaceholderText("Atlas A4 en mosaïque continue")
+        self._title_edit.setToolTip(
+            "Titre affiché en grand sur la page de garde du PDF"
+        )
+        form.addRow("Titre de l'atlas :", self._title_edit)
 
         main_layout.addWidget(pdf_group)
 
