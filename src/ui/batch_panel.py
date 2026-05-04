@@ -45,51 +45,90 @@ class _MergeWorker(QObject):
         jobs: List[BatchJob],
         output_path: Path,
         cfg: PDFConfig,
+        assembly_mode: bool = False,
     ) -> None:
         super().__init__()
         self._jobs = jobs
         self._output_path = output_path
         self._cfg = cfg
+        self._assembly_mode = assembly_mode
 
     def run(self) -> None:
         from ..core.scanner import scan_directory
         from ..core.mosaic import Mosaic
 
         try:
-            folder_mosaics: List[Tuple[str, Mosaic]] = []
-
-            for i, job in enumerate(self._jobs):
-                self.progress.emit(i, len(self._jobs), f"Scan : {job.input_dir.name}")
-                result = scan_directory(job.input_dir)
-                if result.total_files == 0:
-                    continue
-
-                mosaic: Optional[Mosaic] = None
-                if result.has_vrt:
-                    mosaic = Mosaic.from_vrt(result.vrt_files[0])
-                if mosaic is None:
-                    mosaic = Mosaic.from_files([f.path for f in result.raster_files])
-
-                if mosaic.width > 0 and mosaic.height > 0:
-                    folder_mosaics.append((job.input_dir.name, mosaic))
-
-            if not folder_mosaics:
-                self.error.emit("Aucun fichier raster trouvé dans les dossiers sélectionnés.")
-                return
-
-            total_pre = sum(1 for _ in folder_mosaics)
-            self.progress.emit(0, total_pre, f"Génération PDF fusionné ({total_pre} dossier(s))…")
-
-            self._cfg.output_path = self._output_path
-
-            def page_cb(cur: int, total: int, msg: str) -> None:
-                self.progress.emit(cur, total, msg)
-
-            output = convert_folders_to_pdf(folder_mosaics, self._cfg, progress_callback=page_cb)
-            self.finished.emit(str(output))
-
+            if self._assembly_mode:
+                self._run_assembly(scan_directory, Mosaic)
+            else:
+                self._run_sectioned(scan_directory, Mosaic)
         except Exception as exc:
             self.error.emit(str(exc))
+
+    def _run_sectioned(self, scan_directory, Mosaic) -> None:
+        """Original mode: one PDF section per folder."""
+        folder_mosaics: List[Tuple[str, Mosaic]] = []
+
+        for i, job in enumerate(self._jobs):
+            self.progress.emit(i, len(self._jobs), f"Scan : {job.input_dir.name}")
+            result = scan_directory(job.input_dir)
+            if result.total_files == 0:
+                continue
+
+            mosaic: Optional[Mosaic] = None
+            if result.has_vrt:
+                mosaic = Mosaic.from_vrt(result.vrt_files[0])
+            if mosaic is None:
+                mosaic = Mosaic.from_files([f.path for f in result.raster_files])
+
+            if mosaic.width > 0 and mosaic.height > 0:
+                folder_mosaics.append((job.input_dir.name, mosaic))
+
+        if not folder_mosaics:
+            self.error.emit("Aucun fichier raster trouvé dans les dossiers sélectionnés.")
+            return
+
+        total_pre = len(folder_mosaics)
+        self.progress.emit(0, total_pre, f"Génération PDF fusionné ({total_pre} dossier(s))…")
+
+        self._cfg.output_path = self._output_path
+
+        def page_cb(cur: int, total: int, msg: str) -> None:
+            self.progress.emit(cur, total, msg)
+
+        output = convert_folders_to_pdf(folder_mosaics, self._cfg, progress_callback=page_cb)
+        self.finished.emit(str(output))
+
+    def _run_assembly(self, scan_directory, Mosaic) -> None:
+        """Assembly mode: combine all images from all folders into one unified mosaic."""
+        from ..core.pdf_converter import convert_to_pdf
+
+        all_paths = []
+        n_jobs = len(self._jobs)
+
+        for i, job in enumerate(self._jobs):
+            self.progress.emit(i, n_jobs, f"Scan : {job.input_dir.name}")
+            result = scan_directory(job.input_dir)
+            all_paths.extend(f.path for f in result.raster_files)
+
+        if not all_paths:
+            self.error.emit("Aucun fichier raster trouvé dans les dossiers sélectionnés.")
+            return
+
+        self.progress.emit(n_jobs, n_jobs, f"Construction de la mosaïque unifiée ({len(all_paths)} tuile(s))…")
+        mosaic = Mosaic.from_files(all_paths)
+
+        if mosaic.width == 0 or mosaic.height == 0:
+            self.error.emit("La mosaïque assemblée est vide — vérifiez les données source.")
+            return
+
+        self._cfg.output_path = self._output_path
+
+        def page_cb(cur: int, total: int, msg: str) -> None:
+            self.progress.emit(cur, total, msg)
+
+        output = convert_to_pdf(mosaic, self._cfg, progress_callback=page_cb)
+        self.finished.emit(str(output))
 
 
 class BatchPanel(QWidget):
@@ -158,6 +197,19 @@ class BatchPanel(QWidget):
         merge_row.addWidget(self._merge_browse_btn)
         layout.addLayout(merge_row)
 
+        # Assembly option row (sub-option of merge)
+        assemble_row = QHBoxLayout()
+        assemble_row.addSpacing(20)
+        self._assemble_check = QCheckBox("Assembler les images en une mosaïque unifiée")
+        self._assemble_check.setToolTip(
+            "Combine toutes les tuiles de tous les dossiers en une seule mosaïque géoréférencée\n"
+            "avant de générer le PDF (ignore les sections par dossier)"
+        )
+        self._assemble_check.setEnabled(False)
+        assemble_row.addWidget(self._assemble_check)
+        assemble_row.addStretch()
+        layout.addLayout(assemble_row)
+
         # Merge progress bar (hidden until merge mode active)
         self._merge_progress = QProgressBar()
         self._merge_progress.setRange(0, 100)
@@ -182,6 +234,9 @@ class BatchPanel(QWidget):
     def _on_merge_toggled(self, checked: bool) -> None:
         self._merge_path_edit.setEnabled(checked)
         self._merge_browse_btn.setEnabled(checked)
+        self._assemble_check.setEnabled(checked)
+        if not checked:
+            self._assemble_check.setChecked(False)
 
     def _browse_merge_output(self) -> None:
         path, _ = QFileDialog.getSaveFileName(
@@ -259,8 +314,10 @@ class BatchPanel(QWidget):
         self._merge_progress.setVisible(True)
         self._merge_progress.setValue(0)
 
+        assembly_mode = self._assemble_check.isChecked()
+
         self._merge_thread = QThread()
-        self._merge_worker = _MergeWorker(list(jobs), output_path, cfg)
+        self._merge_worker = _MergeWorker(list(jobs), output_path, cfg, assembly_mode=assembly_mode)
         self._merge_worker.moveToThread(self._merge_thread)
         self._merge_thread.started.connect(self._merge_worker.run)
         self._merge_worker.progress.connect(self._on_merge_progress)
