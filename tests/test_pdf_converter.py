@@ -161,6 +161,36 @@ def test_compute_pages_overlap():
     assert col1_pages[0].src_x == stride
 
 
+def test_compute_pages_optimal_overlap_no_blank_and_min_overlap():
+    cfg = PDFConfig(
+        dpi=300,
+        orientation=Orientation.PORTRAIT,
+        margin_mm=10.0,
+        overlap_mm=10.0,
+        optimal_overlap=True,
+    )
+    pw = cfg.printable_w_px
+    ph = cfg.printable_h_px
+    mosaic = _make_mock_mosaic(pw * 3 + 500, ph * 2 + 250)
+    pages = compute_pages(mosaic, cfg)
+
+    row0 = sorted([p for p in pages if p.row == 0], key=lambda p: p.col)
+    col0 = sorted([p for p in pages if p.col == 0], key=lambda p: p.row)
+
+    assert row0[0].src_x == 0
+    assert row0[-1].src_x + row0[-1].src_w == mosaic.width
+    assert col0[0].src_y == 0
+    assert col0[-1].src_y + col0[-1].src_h == mosaic.height
+
+    min_overlap_px = cfg.overlap_px
+    strides_x = [row0[i + 1].src_x - row0[i].src_x for i in range(len(row0) - 1)]
+    strides_y = [col0[i + 1].src_y - col0[i].src_y for i in range(len(col0) - 1)]
+    overlaps_x = [row0[i].src_w - s for i, s in enumerate(strides_x)]
+    overlaps_y = [col0[i].src_h - s for i, s in enumerate(strides_y)]
+    assert all(ov >= min_overlap_px for ov in overlaps_x)
+    assert all(ov >= min_overlap_px for ov in overlaps_y)
+
+
 def test_compute_pages_sequence():
     cfg = PDFConfig(dpi=300, orientation=Orientation.PORTRAIT, margin_mm=0.0, overlap_mm=0.0)
     pw = cfg.printable_w_px
@@ -367,3 +397,42 @@ def test_compute_pages_at_scale_overlap_geo_extents():
     assert abs(col0.geo_max_x - col0.geo_min_x - ground_w) < 1.0
     assert abs(col1.geo_max_x - col1.geo_min_x - ground_w) < 1.0
 
+
+def test_compute_pages_at_scale_optimal_overlap_no_blank_and_min_overlap():
+    pixel_size_m = 2.5
+    overlap_mm = 10.0
+    cfg = PDFConfig(
+        dpi=300,
+        orientation=Orientation.PORTRAIT,
+        margin_mm=10.0,
+        scale=25000,
+        overlap_mm=overlap_mm,
+        optimal_overlap=True,
+    )
+
+    ground_w = cfg.printable_w_mm / 1000.0 * cfg.scale
+    ground_h = cfg.image_h_mm / 1000.0 * cfg.scale
+    w_px = int((ground_w * 3 + 200) / pixel_size_m)
+    h_px = int((ground_h * 2 + 200) / pixel_size_m)
+    mosaic = _make_georef_mosaic(w_px, h_px, pixel_size_m=pixel_size_m)
+    pages = compute_pages_at_scale(mosaic, cfg)
+
+    row0 = sorted([p for p in pages if p.row == 0], key=lambda p: p.col)
+    col0 = sorted([p for p in pages if p.col == 0], key=lambda p: p.row)
+
+    assert row0[0].src_x == 0
+    assert row0[-1].src_x + row0[-1].src_w == mosaic.width
+    assert col0[0].src_y == 0
+    assert col0[-1].src_y + col0[-1].src_h == mosaic.height
+
+    min_overlap_src = int(round(overlap_mm / 1000.0 * cfg.scale / pixel_size_m))
+    overlaps_x = [
+        row0[i].src_w - (row0[i + 1].src_x - row0[i].src_x)
+        for i in range(len(row0) - 1)
+    ]
+    overlaps_y = [
+        col0[i].src_h - (col0[i + 1].src_y - col0[i].src_y)
+        for i in range(len(col0) - 1)
+    ]
+    assert all(ov >= min_overlap_src for ov in overlaps_x)
+    assert all(ov >= min_overlap_src for ov in overlaps_y)

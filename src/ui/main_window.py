@@ -84,6 +84,7 @@ class _ConvertWorker(QObject):
                 orientation=self._sp.orientation,
                 margin_mm=self._sp.margin_mm,
                 overlap_mm=self._sp.overlap_mm,
+                optimal_overlap=self._sp.optimal_overlap,
                 output_path=out_path,
                 atlas_title=self._sp.atlas_title,
             )

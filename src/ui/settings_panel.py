@@ -9,6 +9,7 @@ from typing import Optional
 
 from PyQt6.QtCore import pyqtSignal
 from PyQt6.QtWidgets import (
+    QCheckBox,
     QComboBox,
     QFileDialog,
     QFormLayout,
@@ -64,6 +65,10 @@ class SettingsPanel(QWidget):
         return self._overlap_spin.value()
 
     @property
+    def optimal_overlap(self) -> bool:
+        return self._optimal_overlap_check.isChecked()
+
+    @property
     def atlas_title(self) -> str:
         return self._title_edit.text().strip() or "Atlas A4 en mosaïque continue"
 
@@ -106,9 +111,16 @@ class SettingsPanel(QWidget):
         self._overlap_spin.setValue(5)
         self._overlap_spin.setSuffix(" mm")
         self._overlap_spin.setToolTip(
-            "Chevauchement entre pages adjacentes (évite les coupures nettes sur les bords)"
+            "Chevauchement entre pages adjacentes"
         )
-        form.addRow("Chevauchement :", self._overlap_spin)
+        form.addRow("Chevauchement min. :", self._overlap_spin)
+
+        self._optimal_overlap_check = QCheckBox("Chevauchement optimal (sans blancs)")
+        self._optimal_overlap_check.setToolTip(
+            "Ajuste automatiquement les pas entre pages pour supprimer les blancs en bordure "
+            "tout en respectant le chevauchement minimum."
+        )
+        form.addRow("", self._optimal_overlap_check)
 
         self._title_edit = QLineEdit()
         self._title_edit.setPlaceholderText("Atlas A4 en mosaïque continue")
