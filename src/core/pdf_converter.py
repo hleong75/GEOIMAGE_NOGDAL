@@ -109,6 +109,9 @@ class PDFConfig:
     orientation: Orientation = Orientation.PORTRAIT
     margin_mm: float = 10.0
     overlap_mm: float = 5.0
+    # If True, overlap_mm is treated as a minimum overlap and page starts are
+    # distributed to fully cover the mosaic with no blank edge area.
+    optimal_overlap: bool = False
     output_path: Path = Path("output.pdf")
     # Map scale denominator (e.g. 25000 for 1:25 000).
     # When > 0 and the mosaic carries georef data, atlas-style scale-based
@@ -199,36 +202,31 @@ def compute_pages(mosaic: Mosaic, cfg: PDFConfig) -> List[PageInfo]:
     ph = cfg.printable_h_px
     overlap = cfg.overlap_px
 
-    # Stride is the number of new pixels introduced per step.
-    stride_x = max(1, pw - overlap)
-    stride_y = max(1, ph - overlap)
-
     # Effective page region clamped to mosaic size (for mosaics smaller than 1 page)
     page_w = min(pw, mosaic.width)
     page_h = min(ph, mosaic.height)
-
-    if mosaic.width <= pw:
-        cols = 1
+    if cfg.optimal_overlap:
+        starts_x = _compute_axis_starts_optimal(mosaic.width, page_w, overlap)
+        starts_y = _compute_axis_starts_optimal(mosaic.height, page_h, overlap)
     else:
-        cols = 1 + math.ceil((mosaic.width - pw) / stride_x)
-
-    if mosaic.height <= ph:
-        rows = 1
-    else:
-        rows = 1 + math.ceil((mosaic.height - ph) / stride_y)
+        # Stride is the number of new pixels introduced per step.
+        stride_x = max(1, pw - overlap)
+        stride_y = max(1, ph - overlap)
+        cols = 1 if mosaic.width <= pw else 1 + math.ceil((mosaic.width - pw) / stride_x)
+        rows = 1 if mosaic.height <= ph else 1 + math.ceil((mosaic.height - ph) / stride_y)
+        starts_x = [col * stride_x for col in range(cols)]
+        starts_y = [row * stride_y for row in range(rows)]
 
     pages: list[PageInfo] = []
     idx = 0
-    for row in range(rows):
-        for col in range(cols):
-            src_x = col * stride_x
-            src_y = row * stride_y
+    for row, src_y in enumerate(starts_y):
+        for col, src_x in enumerate(starts_x):
 
             # Shift edge pages back so we always render a full page_w × page_h region.
             # This prevents blank margins on the last column/row.
-            if src_x + page_w > mosaic.width:
+            if not cfg.optimal_overlap and src_x + page_w > mosaic.width:
                 src_x = max(0, mosaic.width - page_w)
-            if src_y + page_h > mosaic.height:
+            if not cfg.optimal_overlap and src_y + page_h > mosaic.height:
                 src_y = max(0, mosaic.height - page_h)
 
             pages.append(
@@ -276,34 +274,30 @@ def compute_pages_at_scale(mosaic: Mosaic, cfg: PDFConfig) -> List[PageInfo]:
     overlap_m = cfg.overlap_mm / _MM_PER_METER * cfg.scale
     # Convert to source pixels; clamp so stride stays at least 1
     overlap_src_px = max(0, min(int(round(overlap_m / psm)), min(src_w, src_h) - 1))
-    stride_w = max(1, src_w - overlap_src_px)
-    stride_h = max(1, src_h - overlap_src_px)
-    stride_m_w = max(1.0, ground_w - overlap_m)
-    stride_m_h = max(1.0, ground_h - overlap_m)
-
-    # Number of pages from geographic extent (preferred) or pixel size
-    geo = mosaic.geo_extent
-    if geo is not None and geo.is_valid():
-        cols = max(1, math.ceil((geo.width_m - overlap_m) / stride_m_w))
-        rows = max(1, math.ceil((geo.height_m - overlap_m) / stride_m_h))
+    if cfg.optimal_overlap:
+        starts_x = _compute_axis_starts_optimal(mosaic.width, src_w, overlap_src_px)
+        starts_y = _compute_axis_starts_optimal(mosaic.height, src_h, overlap_src_px)
     else:
+        stride_w = max(1, src_w - overlap_src_px)
+        stride_h = max(1, src_h - overlap_src_px)
         cols = max(1, math.ceil((mosaic.width - overlap_src_px) / stride_w))
         rows = max(1, math.ceil((mosaic.height - overlap_src_px) / stride_h))
+        starts_x = [col * stride_w for col in range(cols)]
+        starts_y = [row * stride_h for row in range(rows)]
+    geo = mosaic.geo_extent
 
     pages: list[PageInfo] = []
     idx = 0
-    for row in range(rows):
-        for col in range(cols):
-            src_x = col * stride_w
-            src_y = row * stride_h
+    for row, src_y in enumerate(starts_y):
+        for col, src_x in enumerate(starts_x):
 
             # Lambert 93 extents for this page
             has_geo = False
             page_min_x = page_min_y = page_max_x = page_max_y = 0.0
             if geo is not None and geo.is_valid():
-                page_min_x = geo.min_x + col * stride_m_w
+                page_min_x = geo.min_x + src_x * psm
                 page_max_x = page_min_x + ground_w
-                page_max_y = geo.max_y - row * stride_m_h
+                page_max_y = geo.max_y - src_y * psm
                 page_min_y = page_max_y - ground_h
                 has_geo = True
 
@@ -331,6 +325,29 @@ def compute_pages_at_scale(mosaic: Mosaic, cfg: PDFConfig) -> List[PageInfo]:
             idx += 1
 
     return pages
+
+
+def _compute_axis_starts_optimal(total_size: int, page_size: int, min_overlap: int) -> List[int]:
+    """Compute page starts that fully cover the axis and keep overlap >= min_overlap."""
+    if total_size <= 0:
+        return [0]
+    if page_size <= 0 or total_size <= page_size:
+        return [0]
+
+    min_ov = max(0, min(min_overlap, page_size - 1))
+    stride_limit = max(1, page_size - min_ov)
+    span = total_size - page_size
+    steps = max(1, math.ceil(span / stride_limit))
+
+    base_stride = span // steps
+    remainder = span % steps
+
+    starts = [0]
+    cur = 0
+    for i in range(steps):
+        cur += base_stride + (1 if i < remainder else 0)
+        starts.append(cur)
+    return starts
 
 
 def _pil_to_bytes(img: "Image.Image", fmt: str = "JPEG", quality: int = 90) -> bytes:

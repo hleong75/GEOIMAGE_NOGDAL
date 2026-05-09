@@ -68,6 +68,7 @@ python main.py
 
 1. **Glissez** un ou plusieurs dossiers IGN dans la zone de prévisualisation, ou utilisez **Fichier → Ouvrir dossier**
 2. Configurez DPI, orientation et dossier de sortie dans le panneau droit
+2.1 (Optionnel) activez **Chevauchement optimal (sans blancs)** et définissez un chevauchement minimal
 3. (Optionnel) tracez un rectangle dans l’aperçu pour limiter l’export à une zone
 4. Cliquez **🖨 Convertir en PDF**
 
@@ -86,6 +87,8 @@ Options :
 | `--dpi` | Résolution (72–1200) | `300` |
 | `--landscape` | Orientation paysage | portrait |
 | `--margin` | Marges en mm | `10.0` |
+| `--overlap` | Chevauchement en mm (minimum si `--optimal-overlap`) | `5.0` |
+| `--optimal-overlap` | Répartition optimale des pages (sans blancs) avec chevauchement minimum | `False` |
 
 ### Traitement en lot (GUI)
 

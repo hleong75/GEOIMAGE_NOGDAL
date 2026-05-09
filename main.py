@@ -88,6 +88,8 @@ def run_cli(args: argparse.Namespace) -> int:
         dpi=args.dpi,
         orientation=orientation,
         margin_mm=args.margin,
+        overlap_mm=args.overlap,
+        optimal_overlap=args.optimal_overlap,
         scale=args.scale,
         output_path=out_path,
     )
@@ -112,6 +114,8 @@ def main() -> None:
     parser.add_argument("--dpi", type=int, default=300, help="DPI (default: 300)")
     parser.add_argument("--landscape", action="store_true", help="Landscape orientation")
     parser.add_argument("--margin", type=float, default=10.0, help="Margin in mm")
+    parser.add_argument("--overlap", type=float, default=5.0, help="Overlap in mm (minimum if --optimal-overlap is set)")
+    parser.add_argument("--optimal-overlap", action="store_true", help="Distribute pages to avoid blank edges with at least --overlap")
     parser.add_argument("--scale", type=int, default=25000, help="Map scale denominator (default: 25000 for 1:25 000)")
 
     args = parser.parse_args()
