@@ -65,7 +65,9 @@ class _ImageLabel(QLabel):
         if shown is None or shown.width() <= 0 or shown.height() <= 0:
             return None
 
-        rect = self._selection_rect.normalized().intersected(QRect(0, 0, shown.width(), shown.height()))
+        normalized = self._selection_rect.normalized()
+        bounds = QRect(0, 0, shown.width(), shown.height())
+        rect = normalized.intersected(bounds)
         if rect.width() <= 0 or rect.height() <= 0:
             return None
 

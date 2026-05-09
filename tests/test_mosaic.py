@@ -233,3 +233,5 @@ def test_mosaic_cropped_rejects_empty_region():
     with pytest.raises(ValueError):
         mosaic.cropped(0, 0, 0, 100)
 
+    with pytest.raises(ValueError):
+        mosaic.cropped(0, 0, 100, 0)

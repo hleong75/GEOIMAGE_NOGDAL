@@ -41,7 +41,7 @@ from PyQt6.QtWidgets import (
 from ..core.batch_processor import BatchJob, BatchProcessor
 from ..core.license import LicenseManager
 from ..core.mosaic import Mosaic
-from ..core.scanner import scan_directory
+from ..core.scanner import scan_directory, ScanResult
 from .batch_panel import BatchPanel
 from .log_widget import LogWidget
 from .preview_widget import PreviewWidget
@@ -266,6 +266,8 @@ class MainWindow(QMainWindow):
             f"Scan terminé : {result.total_files} fichier(s) raster"
             + (f", {len(result.vrt_files)} VRT" if result.has_vrt else "")
         )
+        if len(result.vrt_files) > 1:
+            self._log.info("Plusieurs VRT détectés — aperçu construit depuis les tuiles raster fusionnées.")
         self._status_bar.showMessage(f"{result.total_files} fichier(s) trouvé(s)")
         self._settings.set_convert_enabled(result.total_files > 0)
 
@@ -430,20 +432,20 @@ class _ScanWorker(QObject):
                 self.error.emit("Aucun dossier à scanner.")
                 return
 
-            result = all_results[0]
-            for extra in all_results[1:]:
-                result.raster_files.extend(extra.raster_files)
-                result.vrt_files.extend(extra.vrt_files)
-                result.tab_files.extend(extra.tab_files)
-                result.errors.extend(extra.errors)
-            result.raster_files.sort(
+            merged = ScanResult(root_dir=self._folders[0])
+            for res in all_results:
+                merged.raster_files.extend(res.raster_files)
+                merged.vrt_files.extend(res.vrt_files)
+                merged.tab_files.extend(res.tab_files)
+                merged.errors.extend(res.errors)
+            merged.raster_files.sort(
                 key=lambda f: (
                     -(f.grid_y or 0),
                     f.grid_x or 0,
                     str(f.path),
                 )
             )
-            self.finished.emit(result)
+            self.finished.emit(merged)
         except Exception as exc:
             self.error.emit(str(exc))
 
