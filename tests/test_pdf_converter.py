@@ -10,6 +10,8 @@ from src.core.pdf_converter import (
     PDFConfig, Orientation, compute_pages, compute_pages_at_scale,
     MM_PER_INCH, convert_folders_to_pdf,
     _HEADER_H_PT, _GEO_H_PT, _TILES_H_PT, _FOOTER_H_PT, PT_PER_INCH,
+    _clip_page_region_to_mosaic,
+    PageInfo,
 )
 from src.core.mosaic import Mosaic, MosaicLayout, TileInfo
 from src.core.georef import GeoInfo
@@ -205,6 +207,15 @@ def test_compute_pages_sequence():
     assert pages[1].col == 1 and pages[1].row == 0
     assert pages[2].col == 2 and pages[2].row == 0
     assert pages[3].col == 0 and pages[3].row == 1
+
+
+def test_clip_page_region_to_mosaic_partial_and_outside():
+    page = PageInfo(page_index=0, col=0, row=0, src_x=-40, src_y=-10, src_w=100, src_h=50)
+    clipped = _clip_page_region_to_mosaic(page, mosaic_w=200, mosaic_h=120)
+    assert clipped == (0, 0, 60, 40)
+
+    outside = PageInfo(page_index=1, col=1, row=0, src_x=250, src_y=0, src_w=50, src_h=50)
+    assert _clip_page_region_to_mosaic(outside, mosaic_w=200, mosaic_h=120) is None
 
 
 # ---------------------------------------------------------------------------
