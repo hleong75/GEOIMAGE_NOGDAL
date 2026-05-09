@@ -401,20 +401,44 @@ def build_mosaic_from_vrt(vrt_path: str | Path) -> Optional[MosaicLayout]:
     tiles: list[TileInfo] = []
     base_dir = vrt_path.parent
 
+    seen_tiles: set[tuple[str, int, int, int, int, int, int]] = set()
+
     # Iterate over all SimpleSource / ComplexSource elements
     for band_el in root.findall(".//VRTRasterBand"):
         for src_tag in ("SimpleSource", "ComplexSource"):
             for src_el in band_el.findall(src_tag):
                 tile = _parse_vrt_source(src_el, base_dir)
-                if tile and not any(t.path == tile.path for t in tiles):
-                    tiles.append(tile)
+                if tile:
+                    key = (
+                        str(tile.path),
+                        tile.x_off,
+                        tile.y_off,
+                        tile.width,
+                        tile.height,
+                        tile.src_x_off,
+                        tile.src_y_off,
+                    )
+                    if key not in seen_tiles:
+                        tiles.append(tile)
+                        seen_tiles.add(key)
 
     # Also handle top-level sources (some VRT variants)
     for src_tag in ("SimpleSource", "ComplexSource"):
         for src_el in root.findall(src_tag):
             tile = _parse_vrt_source(src_el, base_dir)
-            if tile and not any(t.path == tile.path for t in tiles):
-                tiles.append(tile)
+            if tile:
+                key = (
+                    str(tile.path),
+                    tile.x_off,
+                    tile.y_off,
+                    tile.width,
+                    tile.height,
+                    tile.src_x_off,
+                    tile.src_y_off,
+                )
+                if key not in seen_tiles:
+                    tiles.append(tile)
+                    seen_tiles.add(key)
 
     if not tiles:
         return None
@@ -451,12 +475,25 @@ def _parse_vrt_source(src_el: ET.Element, base_dir: Path) -> Optional[TileInfo]:
     if width == 0 or height == 0:
         return None
 
+    src_rect_el = src_el.find("SrcRect")
+    src_x_off = 0
+    src_y_off = 0
+    if src_rect_el is not None:
+        try:
+            src_x_off = int(float(src_rect_el.attrib.get("xOff", 0)))
+            src_y_off = int(float(src_rect_el.attrib.get("yOff", 0)))
+        except (ValueError, KeyError):
+            src_x_off = 0
+            src_y_off = 0
+
     return TileInfo(
         path=tile_path,
         x_off=x_off,
         y_off=y_off,
         width=width,
         height=height,
+        src_x_off=src_x_off,
+        src_y_off=src_y_off,
     )
 
 
@@ -666,8 +703,8 @@ class Mosaic:
         thumb_w = max(1, int(self.width * scale))
         thumb_h = max(1, int(self.height * scale))
 
-        # Load all tiles so the thumbnail is always complete (no gaps).
-        canvas = Image.new("RGB", (thumb_w, thumb_h), color=(200, 200, 200))
+        # Keep no-data background neutral/white in previews.
+        canvas = Image.new("RGB", (thumb_w, thumb_h), color=(255, 255, 255))
 
         total_tiles = len(self.layout.tiles)
         for i, tile in enumerate(self.layout.tiles, start=1):
