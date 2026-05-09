@@ -40,3 +40,27 @@ def format_duration(seconds: float) -> str:
         return f"{m}m {s}s"
     h, m = divmod(m, 60)
     return f"{h}h {m}m {s}s"
+
+
+def map_region_between_sizes(
+    region: tuple[int, int, int, int],
+    src_size: tuple[int, int],
+    dst_size: tuple[int, int],
+) -> tuple[int, int, int, int]:
+    """Map a rectangular region from source-space pixels to destination-space pixels."""
+    sx, sy, sw, sh = region
+    src_w, src_h = src_size
+    dst_w, dst_h = dst_size
+
+    if src_w <= 0 or src_h <= 0 or dst_w <= 0 or dst_h <= 0:
+        raise ValueError("Dimensions invalides pour conversion de zone.")
+
+    scale_x = dst_w / src_w
+    scale_y = dst_h / src_h
+    x = max(0, min(dst_w - 1, int(round(sx * scale_x))))
+    y = max(0, min(dst_h - 1, int(round(sy * scale_y))))
+    w = max(1, int(round(sw * scale_x)))
+    h = max(1, int(round(sh * scale_y)))
+    w = min(w, dst_w - x)
+    h = min(h, dst_h - y)
+    return x, y, w, h
