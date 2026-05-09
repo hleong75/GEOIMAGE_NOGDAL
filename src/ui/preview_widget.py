@@ -58,6 +58,11 @@ class _ImageLabel(QLabel):
         self.update()
         self.selection_changed.emit(None)
 
+    def get_original_size(self) -> Optional[tuple[int, int]]:
+        if self._orig_pixmap is None:
+            return None
+        return self._orig_pixmap.width(), self._orig_pixmap.height()
+
     def get_selected_region_in_original_coordinates(self) -> Optional[tuple[int, int, int, int]]:
         if self._orig_pixmap is None or self._selection_rect is None:
             return None
@@ -189,3 +194,6 @@ class PreviewWidget(QWidget):
 
     def get_selected_region(self) -> Optional[tuple[int, int, int, int]]:
         return self._label.get_selected_region_in_original_coordinates()
+
+    def get_image_size(self) -> Optional[tuple[int, int]]:
+        return self._label.get_original_size()

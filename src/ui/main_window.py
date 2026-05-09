@@ -42,6 +42,7 @@ from ..core.batch_processor import BatchJob, BatchProcessor
 from ..core.license import LicenseManager
 from ..core.mosaic import Mosaic
 from ..core.scanner import scan_directory, ScanResult
+from ..utils.helpers import map_region_between_sizes
 from .batch_panel import BatchPanel
 from .log_widget import LogWidget
 from .preview_widget import PreviewWidget
@@ -375,11 +376,26 @@ class MainWindow(QMainWindow):
         self._settings.set_convert_enabled(True)
 
     def _on_preview_selection_changed(self, region: Optional[tuple[int, int, int, int]]) -> None:
-        self._selected_region = region
+        mapped = region
+        if (
+            region is not None
+            and self._current_mosaic is not None
+            and self._current_mosaic.width > 0
+            and self._current_mosaic.height > 0
+        ):
+            preview_size = self._preview.get_image_size()
+            if preview_size is not None and preview_size[0] > 0 and preview_size[1] > 0:
+                mapped = map_region_between_sizes(
+                    region,
+                    preview_size,
+                    (self._current_mosaic.width, self._current_mosaic.height),
+                )
+
+        self._selected_region = mapped
         if region is None:
             self._status_bar.showMessage("Aucune zone sélectionnée (conversion complète)")
         else:
-            x, y, w, h = region
+            x, y, w, h = self._selected_region
             self._status_bar.showMessage(f"Zone sélectionnée : x={x}, y={y}, {w}×{h} px")
 
     def _on_activate_license(self) -> None:
