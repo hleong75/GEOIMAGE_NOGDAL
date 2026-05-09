@@ -263,3 +263,30 @@ def test_mosaic_cropped_preserves_source_offsets():
     # Selected x-range starts at source x=6, so first output pixel must match x=6.
     assert region.getpixel((0, 0)) == (120, 0, 0)
     assert region.getpixel((2, 3)) == (160, 150, 0)
+
+
+def test_mosaic_thumbnail_respects_cropped_source_offsets():
+    """Thumbnail generation must use cropped source offsets on border tiles."""
+    from PIL import Image
+
+    with tempfile.TemporaryDirectory() as tmp:
+        img_path = Path(tmp) / "tile.png"
+        img = Image.new("RGB", (6, 2), color=(0, 0, 0))
+        for x in range(6):
+            for y in range(2):
+                img.putpixel((x, y), (x * 40, y * 10, 0))
+        img.save(img_path)
+
+        layout = MosaicLayout(
+            tiles=[TileInfo(path=img_path, x_off=0, y_off=0, width=6, height=2)],
+            total_width=6,
+            total_height=2,
+        )
+        mosaic = Mosaic(layout)
+        cropped = mosaic.cropped(2, 0, 3, 2)
+        thumb = cropped.get_thumbnail(max_size=(3, 2))
+
+    assert thumb.size == (3, 2)
+    # Cropped x-range starts at source x=2; first and last pixels must match x=2 and x=4.
+    assert thumb.getpixel((0, 0)) == (80, 0, 0)
+    assert thumb.getpixel((2, 1)) == (160, 10, 0)

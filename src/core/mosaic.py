@@ -673,7 +673,21 @@ class Mosaic:
         for i, tile in enumerate(self.layout.tiles, start=1):
             try:
                 img = _open_image(tile.path)
-                img.thumbnail((max(1, int(tile.width * scale)), max(1, int(tile.height * scale))), Image.LANCZOS)
+                src_x1 = max(0, int(tile.src_x_off))
+                src_y1 = max(0, int(tile.src_y_off))
+                src_x2 = min(img.width, src_x1 + max(1, int(tile.width)))
+                src_y2 = min(img.height, src_y1 + max(1, int(tile.height)))
+                if src_x2 <= src_x1 or src_y2 <= src_y1:
+                    continue
+
+                img = img.crop((src_x1, src_y1, src_x2, src_y2))
+                if img.mode != "RGB":
+                    img = img.convert("RGB")
+
+                target_w = max(1, int(tile.width * scale))
+                target_h = max(1, int(tile.height * scale))
+                if img.size != (target_w, target_h):
+                    img = img.resize((target_w, target_h), Image.LANCZOS)
                 px = max(0, int(tile.x_off * scale))
                 py = max(0, int(tile.y_off * scale))
                 canvas.paste(img, (px, py))
