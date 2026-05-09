@@ -56,7 +56,7 @@ PT_PER_INCH = 72.0
 
 # Atlas page layout constants (points)
 # These define reserved areas on content pages for headers/footers.
-_HEADER_H_PT = 48.0   # Compact top header to maximise map area
+_HEADER_H_PT = 48.0   # Compact top header to maximize map area
 _GEO_H_PT    = 0.0    # Lambert 93 extent now embedded in the header
 _TILES_H_PT  = 0.0    # Tile list now embedded in the header
 _FOOTER_H_PT = 20.0   # Bottom footer bar (source | pagination | scale reminder)
@@ -84,9 +84,18 @@ _MM_PER_METER = 1000.0
 # Overview page thumbnail bounds (pixels)
 _MIN_THUMB_PX = 64
 _MAX_THUMB_PX = 1024
+# Point-to-pixel conversion for preview thumbnail sizing (visual estimate only).
+_SCREEN_DPI = 96
+_PREVIEW_JPEG_QUALITY = 80
 
 # Approximate character width in points (used to truncate long tile lists)
 _CHAR_WIDTH_APPROX_PT = 4.5
+
+# Page number label sizing on preview overlays
+_MIN_PAGE_LABEL_PT = 5.0
+_MAX_PAGE_LABEL_PT = 9.0
+# Proportional factor that keeps labels readable without cluttering the preview.
+_PAGE_LABEL_FACTOR = 0.5
 
 # Minimum height (points) of the overview map frame on the cover page
 _MIN_OVERVIEW_H_PT = 20.0
@@ -368,8 +377,8 @@ def _pil_to_bytes(img: "Image.Image", fmt: str = "JPEG", quality: int = 90) -> b
 # ---------------------------------------------------------------------------
 
 def _format_scale(scale_value: int) -> str:
-    """Return a human-readable scale string such as '1 : 25 000'."""
-    return f"1 : {scale_value:,}".replace(",", " ")
+    """Return a human-readable ASCII scale string such as '1 : 25,000'."""
+    return f"1 : {scale_value:,}"
 
 
 def _format_distance_m(meters: float) -> str:
@@ -504,19 +513,24 @@ def _draw_mosaic_preview_with_index(
         _draw_mosaic_index(c, mosaic, pages, box_x, box_y, box_w, box_h)
         return
 
-    max_thumb_w = int(box_w / PT_PER_INCH * 96)
-    max_thumb_h = int(box_h / PT_PER_INCH * 96)
+    if not pages:
+        _draw_mosaic_index(c, mosaic, pages, box_x, box_y, box_w, box_h)
+        return
+
+    # Convert PDF points to approximate preview pixels for thumbnail generation.
+    max_thumb_w = int(box_w / PT_PER_INCH * _SCREEN_DPI)
+    max_thumb_h = int(box_h / PT_PER_INCH * _SCREEN_DPI)
     max_thumb_w = max(_MIN_THUMB_PX, min(max_thumb_w, _MAX_THUMB_PX))
     max_thumb_h = max(_MIN_THUMB_PX, min(max_thumb_h, _MAX_THUMB_PX))
     thumb = mosaic.get_thumbnail(max_size=(max_thumb_w, max_thumb_h))
-    thumb_bytes = _pil_to_bytes(thumb, fmt="JPEG", quality=80)
+    thumb_bytes = _pil_to_bytes(thumb, fmt="JPEG", quality=_PREVIEW_JPEG_QUALITY)
     thumb_reader = ImageReader(io.BytesIO(thumb_bytes))
 
-    sx = box_w / max(thumb.width, 1)
-    sy = box_h / max(thumb.height, 1)
-    s = min(sx, sy)
-    draw_w = thumb.width * s
-    draw_h = thumb.height * s
+    scale_x = box_w / max(thumb.width, 1)
+    scale_y = box_h / max(thumb.height, 1)
+    scale = min(scale_x, scale_y)
+    draw_w = thumb.width * scale
+    draw_h = thumb.height * scale
     dx = box_x + (box_w - draw_w) / 2.0
     dy = box_y + (box_h - draw_h) / 2.0
 
@@ -538,7 +552,10 @@ def _draw_mosaic_preview_with_index(
     c.setStrokeColorRGB(0.82, 0.33, 0.05)
     c.setLineWidth(1.0)
     c.setDash([4, 3])
-    label_size = max(5.0, min(9.0, draw_w / max(len(pages), 1) * 0.5))
+    label_size = max(
+        _MIN_PAGE_LABEL_PT,
+        min(_MAX_PAGE_LABEL_PT, draw_w / max(len(pages), 1) * _PAGE_LABEL_FACTOR),
+    )
     for page in pages:
         px = dx + page.src_x * px_scale_x
         py = dy + draw_h - (page.src_y + page.src_h) * px_scale_y
