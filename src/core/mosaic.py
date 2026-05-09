@@ -25,6 +25,8 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+TileIdentityKey = tuple[str, int, int, int, int, int, int]
+
 try:
     from PIL import Image
     PIL_AVAILABLE = True
@@ -401,7 +403,7 @@ def build_mosaic_from_vrt(vrt_path: str | Path) -> Optional[MosaicLayout]:
     tiles: list[TileInfo] = []
     base_dir = vrt_path.parent
 
-    seen_tiles: set[tuple[str, int, int, int, int, int, int]] = set()
+    seen_tiles: set[TileIdentityKey] = set()
 
     # Iterate over all SimpleSource / ComplexSource elements
     for band_el in root.findall(".//VRTRasterBand"):
@@ -409,15 +411,7 @@ def build_mosaic_from_vrt(vrt_path: str | Path) -> Optional[MosaicLayout]:
             for src_el in band_el.findall(src_tag):
                 tile = _parse_vrt_source(src_el, base_dir)
                 if tile:
-                    key = (
-                        str(tile.path),
-                        tile.x_off,
-                        tile.y_off,
-                        tile.width,
-                        tile.height,
-                        tile.src_x_off,
-                        tile.src_y_off,
-                    )
+                    key = _tile_identity_key(tile)
                     if key not in seen_tiles:
                         tiles.append(tile)
                         seen_tiles.add(key)
@@ -427,15 +421,7 @@ def build_mosaic_from_vrt(vrt_path: str | Path) -> Optional[MosaicLayout]:
         for src_el in root.findall(src_tag):
             tile = _parse_vrt_source(src_el, base_dir)
             if tile:
-                key = (
-                    str(tile.path),
-                    tile.x_off,
-                    tile.y_off,
-                    tile.width,
-                    tile.height,
-                    tile.src_x_off,
-                    tile.src_y_off,
-                )
+                key = _tile_identity_key(tile)
                 if key not in seen_tiles:
                     tiles.append(tile)
                     seen_tiles.add(key)
@@ -494,6 +480,19 @@ def _parse_vrt_source(src_el: ET.Element, base_dir: Path) -> Optional[TileInfo]:
         height=height,
         src_x_off=src_x_off,
         src_y_off=src_y_off,
+    )
+
+
+def _tile_identity_key(tile: TileInfo) -> TileIdentityKey:
+    """Return a stable identity key for deduplicating VRT tile references."""
+    return (
+        str(tile.path),
+        tile.x_off,
+        tile.y_off,
+        tile.width,
+        tile.height,
+        tile.src_x_off,
+        tile.src_y_off,
     )
 
 
