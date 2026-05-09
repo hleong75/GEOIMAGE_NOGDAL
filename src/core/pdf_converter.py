@@ -423,6 +423,29 @@ def _draw_wrapped_text(
         c.drawString(x, cur_y, line)
 
 
+def _clip_page_region_to_mosaic(
+    page: PageInfo,
+    mosaic_w: int,
+    mosaic_h: int,
+) -> Optional[tuple[int, int, int, int]]:
+    """
+    Clip a page source region to mosaic bounds.
+
+    Returns (x, y, w, h) in mosaic pixel coordinates, or None when fully outside.
+    """
+    if mosaic_w <= 0 or mosaic_h <= 0 or page.src_w <= 0 or page.src_h <= 0:
+        return None
+
+    x1 = max(0, page.src_x)
+    y1 = max(0, page.src_y)
+    x2 = min(mosaic_w, page.src_x + page.src_w)
+    y2 = min(mosaic_h, page.src_y + page.src_h)
+
+    if x2 <= x1 or y2 <= y1:
+        return None
+    return x1, y1, x2 - x1, y2 - y1
+
+
 
 def _draw_mosaic_index(
     c: "rl_canvas.Canvas",
@@ -481,10 +504,14 @@ def _draw_mosaic_index(
     c.setDash([3, 2])
     label_size = max(4.0, min(8.0, draw_w / max(len(pages), 1) * 0.45))
     for page in pages:
-        px = off_x + page.src_x * idx_scale
-        py = off_y + draw_h - (page.src_y + page.src_h) * idx_scale
-        pw = page.src_w * idx_scale
-        ph = page.src_h * idx_scale
+        clipped = _clip_page_region_to_mosaic(page, mw, mh)
+        if clipped is None:
+            continue
+        sx, sy, sw, sh = clipped
+        px = off_x + sx * idx_scale
+        py = off_y + draw_h - (sy + sh) * idx_scale
+        pw = sw * idx_scale
+        ph = sh * idx_scale
         if pw > 0 and ph > 0:
             c.rect(px, py, pw, ph, fill=0, stroke=1)
 
@@ -492,8 +519,12 @@ def _draw_mosaic_index(
     c.setFont("Helvetica-Bold", label_size)
     c.setFillColorRGB(0.82, 0.33, 0.05)
     for page in pages:
-        cx = off_x + (page.src_x + page.src_w / 2.0) * idx_scale
-        cy = off_y + draw_h - (page.src_y + page.src_h / 2.0) * idx_scale - label_size / 2.0
+        clipped = _clip_page_region_to_mosaic(page, mw, mh)
+        if clipped is None:
+            continue
+        sx, sy, sw, sh = clipped
+        cx = off_x + (sx + sw / 2.0) * idx_scale
+        cy = off_y + draw_h - (sy + sh / 2.0) * idx_scale - label_size / 2.0
         c.drawCentredString(cx, cy, str(page.page_index + 1))
 
     c.restoreState()
@@ -557,10 +588,14 @@ def _draw_mosaic_preview_with_index(
         min(_MAX_PAGE_LABEL_PT, draw_w / max(len(pages), 1) * _PAGE_LABEL_FACTOR),
     )
     for page in pages:
-        px = dx + page.src_x * px_scale_x
-        py = dy + draw_h - (page.src_y + page.src_h) * px_scale_y
-        pw = page.src_w * px_scale_x
-        ph = page.src_h * px_scale_y
+        clipped = _clip_page_region_to_mosaic(page, mosaic.width, mosaic.height)
+        if clipped is None:
+            continue
+        sx, sy, sw, sh = clipped
+        px = dx + sx * px_scale_x
+        py = dy + draw_h - (sy + sh) * px_scale_y
+        pw = sw * px_scale_x
+        ph = sh * px_scale_y
         if pw > 0 and ph > 0:
             c.rect(px, py, pw, ph, fill=0, stroke=1)
 
@@ -568,8 +603,12 @@ def _draw_mosaic_preview_with_index(
     c.setFont("Helvetica-Bold", label_size)
     c.setFillColorRGB(0.82, 0.33, 0.05)
     for page in pages:
-        cx = dx + (page.src_x + page.src_w / 2.0) * px_scale_x
-        cy = dy + draw_h - (page.src_y + page.src_h / 2.0) * px_scale_y - label_size / 2.0
+        clipped = _clip_page_region_to_mosaic(page, mosaic.width, mosaic.height)
+        if clipped is None:
+            continue
+        sx, sy, sw, sh = clipped
+        cx = dx + (sx + sw / 2.0) * px_scale_x
+        cy = dy + draw_h - (sy + sh / 2.0) * px_scale_y - label_size / 2.0
         c.drawCentredString(cx, cy, str(page.page_index + 1))
 
 
