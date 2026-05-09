@@ -248,6 +248,9 @@ class MainWindow(QMainWindow):
             self._log.info(f"Ouverture de {len(folders)} dossiers pour aperçu mosaïque unifié.")
         self._preview.clear()
         self._settings.set_convert_enabled(False)
+        self._progress.setVisible(True)
+        self._progress.setRange(0, 0)
+        self._progress.setValue(0)
 
         # Update default output dir
         # (don't override if user already set one)
@@ -257,11 +260,20 @@ class MainWindow(QMainWindow):
         self._scan_worker = _ScanWorker(folders)
         self._scan_worker.moveToThread(self._scan_thread)
         self._scan_thread.started.connect(self._scan_worker.run)
+        self._scan_worker.progress.connect(self._on_scan_progress)
         self._scan_worker.finished.connect(self._on_scan_done)
         self._scan_worker.error.connect(self._on_scan_error)
         self._scan_worker.finished.connect(self._scan_thread.quit)
         self._scan_worker.error.connect(self._scan_thread.quit)
         self._scan_thread.start()
+
+    def _on_scan_progress(self, cur: int, total: int, msg: str) -> None:
+        if total <= 0:
+            self._progress.setRange(0, 0)
+        else:
+            self._progress.setRange(0, total)
+            self._progress.setValue(cur)
+        self._status_bar.showMessage(msg)
 
     def _on_scan_done(self, result) -> None:
         self._log.success(
@@ -274,10 +286,14 @@ class MainWindow(QMainWindow):
         self._settings.set_convert_enabled(result.total_files > 0)
 
         # Build mosaic & thumbnail in background
+        self._progress.setRange(0, 0)
+        self._progress.setValue(0)
+        self._status_bar.showMessage("Construction de la mosaïque preview…")
         self._thumb_thread = QThread()
         self._thumb_worker = _ThumbnailWorker(result)
         self._thumb_worker.moveToThread(self._thumb_thread)
         self._thumb_thread.started.connect(self._thumb_worker.run)
+        self._thumb_worker.progress.connect(self._on_thumb_progress)
         self._thumb_worker.finished.connect(self._on_thumb_done)
         self._thumb_worker.finished.connect(self._thumb_thread.quit)
         self._thumb_thread.start()
@@ -285,6 +301,15 @@ class MainWindow(QMainWindow):
     def _on_scan_error(self, msg: str) -> None:
         self._log.error(f"Erreur scan : {msg}")
         self._status_bar.showMessage("Erreur")
+        self._progress.setVisible(False)
+
+    def _on_thumb_progress(self, cur: int, total: int, msg: str) -> None:
+        if total <= 0:
+            self._progress.setRange(0, 0)
+        else:
+            self._progress.setRange(0, total)
+            self._progress.setValue(cur)
+        self._status_bar.showMessage(msg)
 
     def _on_thumb_done(self, data) -> None:
         mosaic, thumb_img = data
@@ -295,6 +320,10 @@ class MainWindow(QMainWindow):
                 f"Mosaïque : {mosaic.width}×{mosaic.height} px, "
                 f"{len(mosaic.layout.tiles)} tuile(s)"
             )
+            self._status_bar.showMessage("Aperçu prêt")
+        else:
+            self._status_bar.showMessage("Aperçu indisponible")
+        self._progress.setVisible(False)
 
     def _on_convert(self) -> None:
         if not self._license.can_export:
@@ -437,6 +466,7 @@ class MainWindow(QMainWindow):
 class _ScanWorker(QObject):
     finished = pyqtSignal(object)
     error = pyqtSignal(str)
+    progress = pyqtSignal(int, int, str)
 
     def __init__(self, folders: List[Path]) -> None:
         super().__init__()
@@ -444,7 +474,12 @@ class _ScanWorker(QObject):
 
     def run(self) -> None:
         try:
-            all_results = [scan_directory(folder) for folder in self._folders]
+            total = max(1, len(self._folders))
+            all_results = []
+            self.progress.emit(0, total, "Scan des dossiers en cours…")
+            for i, folder in enumerate(self._folders, start=1):
+                all_results.append(scan_directory(folder))
+                self.progress.emit(i, total, f"Scan dossier {i}/{total} : {folder.name}")
             if not all_results:
                 self.error.emit("Aucun dossier à scanner.")
                 return
@@ -471,6 +506,7 @@ class _ScanWorker(QObject):
 
 class _ThumbnailWorker(QObject):
     finished = pyqtSignal(object)  # (Mosaic, PIL.Image or None)
+    progress = pyqtSignal(int, int, str)
 
     def __init__(self, scan_result) -> None:
         super().__init__()
@@ -481,6 +517,7 @@ class _ThumbnailWorker(QObject):
             mosaic: Optional[Mosaic] = None
             result = self._result
 
+            self.progress.emit(0, 0, "Construction de la mosaïque preview…")
             if result.has_vrt and len(result.vrt_files) == 1:
                 mosaic = Mosaic.from_vrt(result.vrt_files[0])
 
@@ -492,7 +529,10 @@ class _ThumbnailWorker(QObject):
                 mosaic = Mosaic.from_files(tile_paths)
 
             try:
-                thumb = mosaic.get_thumbnail((600, 600))
+                def thumb_cb(cur: int, total: int) -> None:
+                    self.progress.emit(cur, total, f"Chargement aperçu carte : {cur}/{total}")
+
+                thumb = mosaic.get_thumbnail((600, 600), progress_callback=thumb_cb)
             except Exception:
                 thumb = None
 

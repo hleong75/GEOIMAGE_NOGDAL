@@ -17,7 +17,7 @@ import logging
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, Callable, Dict, List, Optional, Tuple
 from xml.etree import ElementTree as ET
 
 if TYPE_CHECKING:
@@ -652,7 +652,11 @@ class Mosaic:
 
         return canvas
 
-    def get_thumbnail(self, max_size: Tuple[int, int] = (512, 512)) -> "Image.Image":
+    def get_thumbnail(
+        self,
+        max_size: Tuple[int, int] = (512, 512),
+        progress_callback: Optional[Callable[[int, int], None]] = None,
+    ) -> "Image.Image":
         """Return a downsampled preview of the full mosaic."""
         if not PIL_AVAILABLE:
             raise RuntimeError("Pillow is required.")
@@ -665,7 +669,8 @@ class Mosaic:
         # Load all tiles so the thumbnail is always complete (no gaps).
         canvas = Image.new("RGB", (thumb_w, thumb_h), color=(200, 200, 200))
 
-        for tile in self.layout.tiles:
+        total_tiles = len(self.layout.tiles)
+        for i, tile in enumerate(self.layout.tiles, start=1):
             try:
                 img = _open_image(tile.path)
                 img.thumbnail((max(1, int(tile.width * scale)), max(1, int(tile.height * scale))), Image.LANCZOS)
@@ -674,5 +679,7 @@ class Mosaic:
                 canvas.paste(img, (px, py))
             except Exception:
                 pass
+            if progress_callback:
+                progress_callback(i, total_tiles)
 
         return canvas
