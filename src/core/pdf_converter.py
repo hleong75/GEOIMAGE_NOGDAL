@@ -7,9 +7,8 @@ keep memory usage low.
 A4 = 210 × 297 mm (portrait)  /  297 × 210 mm (landscape)
 
 Atlas layout (per folder):
-  1. Cover page  — metadata summary + visual index (tile grid + page grid)
-  2. Overview page — full-page mosaic thumbnail with overlays
-  3. Content pages — one per A4 window of the mosaic at fixed scale
+  1. Cover page   — metadata summary + visual index (tile grid + page grid)
+  2. Content pages — one per A4 window of the mosaic at fixed scale
 """
 
 from __future__ import annotations
@@ -290,6 +289,13 @@ def compute_pages_at_scale(mosaic: Mosaic, cfg: PDFConfig) -> List[PageInfo]:
     idx = 0
     for row, src_y in enumerate(starts_y):
         for col, src_x in enumerate(starts_x):
+            # Shift edge pages back so we always render a full-size region.
+            # This prevents blank margins on last column/row and ensures
+            # border tiles are effectively cut on content pages.
+            if not cfg.optimal_overlap and src_x + src_w > mosaic.width:
+                src_x = max(0, mosaic.width - src_w)
+            if not cfg.optimal_overlap and src_y + src_h > mosaic.height:
+                src_y = max(0, mosaic.height - src_h)
 
             # Lambert 93 extents for this page
             has_geo = False
@@ -994,8 +1000,7 @@ def convert_folders_to_pdf(
     When ``cfg.scale > 0`` and a mosaic carries georef data, each folder's
     section is rendered at fixed cartographic scale with:
       1. A cover page (metadata summary + visual index)
-      2. An overview page (mosaic thumbnail with tile/page overlays)
-      3. One content page per A4 window of the mosaic
+      2. One content page per A4 window of the mosaic
 
     Otherwise the legacy DPI-based page layout is used.
 
@@ -1053,7 +1058,7 @@ def convert_folders_to_pdf(
 
     # Total rendered steps for progress reporting
     total_steps = sum(
-        len(pages) + (2 if use_scale and cfg.atlas_pages else 0)
+        len(pages) + (1 if use_scale and cfg.atlas_pages else 0)
         for _, _, pages, use_scale in folder_data
     )
     if total_steps == 0:
@@ -1073,15 +1078,6 @@ def convert_folders_to_pdf(
             _render_cover_page(
                 c, mosaic, pages, page_w_pt, page_h_pt, margin_pt, cfg, folder_name,
                 generation_time=generation_time,
-            )
-            c.showPage()
-            step += 1
-
-            # ---- Overview page ----
-            if progress_callback:
-                progress_callback(step, total_steps, "Génération vue d'ensemble…")
-            _render_overview_page(
-                c, mosaic, pages, page_w_pt, page_h_pt, margin_pt, cfg, folder_name
             )
             c.showPage()
             step += 1

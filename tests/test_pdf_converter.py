@@ -436,3 +436,32 @@ def test_compute_pages_at_scale_optimal_overlap_no_blank_and_min_overlap():
     ]
     assert all(ov >= min_overlap_src for ov in overlaps_x)
     assert all(ov >= min_overlap_src for ov in overlaps_y)
+
+
+def test_compute_pages_at_scale_last_page_shifted_to_mosaic_edge():
+    """Non-optimal scale layout shifts last pages back to avoid blank borders."""
+    cfg = PDFConfig(
+        dpi=300,
+        orientation=Orientation.PORTRAIT,
+        margin_mm=10.0,
+        scale=25000,
+        overlap_mm=0.0,
+        optimal_overlap=False,
+    )
+    pixel_size_m = 2.5
+    ground_w = cfg.printable_w_mm / 1000.0 * cfg.scale
+    ground_h = cfg.image_h_mm / 1000.0 * cfg.scale
+
+    # Slightly larger than one page in both directions: requires 2x2 pages.
+    w_px = int((ground_w + 120.0) / pixel_size_m)
+    h_px = int((ground_h + 180.0) / pixel_size_m)
+    mosaic = _make_georef_mosaic(w_px, h_px, pixel_size_m=pixel_size_m)
+    pages = compute_pages_at_scale(mosaic, cfg)
+
+    right_col = max(p.col for p in pages)
+    bottom_row = max(p.row for p in pages)
+    last_col_page = next(p for p in pages if p.col == right_col and p.row == 0)
+    last_row_page = next(p for p in pages if p.row == bottom_row and p.col == 0)
+
+    assert last_col_page.src_x + last_col_page.src_w == mosaic.width
+    assert last_row_page.src_y + last_row_page.src_h == mosaic.height
