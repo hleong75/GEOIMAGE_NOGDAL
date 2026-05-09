@@ -56,7 +56,7 @@ PT_PER_INCH = 72.0
 
 # Atlas page layout constants (points)
 # These define reserved areas on content pages for headers/footers.
-_HEADER_H_PT = 70.0   # Top header rounded rect (dataset + 3 info lines)
+_HEADER_H_PT = 48.0   # Compact top header to maximize map area
 _GEO_H_PT    = 0.0    # Lambert 93 extent now embedded in the header
 _TILES_H_PT  = 0.0    # Tile list now embedded in the header
 _FOOTER_H_PT = 20.0   # Bottom footer bar (source | pagination | scale reminder)
@@ -84,12 +84,18 @@ _MM_PER_METER = 1000.0
 # Overview page thumbnail bounds (pixels)
 _MIN_THUMB_PX = 64
 _MAX_THUMB_PX = 1024
+# Point-to-pixel conversion for preview thumbnail sizing (visual estimate only).
+_SCREEN_DPI = 96
+_PREVIEW_JPEG_QUALITY = 80
 
 # Approximate character width in points (used to truncate long tile lists)
 _CHAR_WIDTH_APPROX_PT = 4.5
 
-# Maximum number of tile names shown inline in the page header
-_MAX_HEADER_TILES = 5
+# Page number label sizing on preview overlays
+_MIN_PAGE_LABEL_PT = 5.0
+_MAX_PAGE_LABEL_PT = 9.0
+# Proportional factor that keeps labels readable without cluttering the preview.
+_PAGE_LABEL_FACTOR = 0.5
 
 # Minimum height (points) of the overview map frame on the cover page
 _MIN_OVERVIEW_H_PT = 20.0
@@ -371,8 +377,8 @@ def _pil_to_bytes(img: "Image.Image", fmt: str = "JPEG", quality: int = 90) -> b
 # ---------------------------------------------------------------------------
 
 def _format_scale(scale_value: int) -> str:
-    """Return a human-readable scale string such as '1 : 25 000' (using non-breaking spaces)."""
-    return f"1\xa0:\xa0{scale_value:,}".replace(",", "\xa0")
+    """Return a human-readable ASCII scale string such as '1 : 25,000'."""
+    return f"1 : {scale_value:,}"
 
 
 def _format_distance_m(meters: float) -> str:
@@ -493,6 +499,80 @@ def _draw_mosaic_index(
     c.restoreState()
 
 
+def _draw_mosaic_preview_with_index(
+    c: "rl_canvas.Canvas",
+    mosaic: Mosaic,
+    pages: List[PageInfo],
+    box_x: float,
+    box_y: float,
+    box_w: float,
+    box_h: float,
+) -> None:
+    """Draw a raster mosaic preview with tile/page overlays, fallback to vector index."""
+    if not (PIL_AVAILABLE and mosaic.width > 0 and mosaic.height > 0 and box_w > 0 and box_h > 0):
+        _draw_mosaic_index(c, mosaic, pages, box_x, box_y, box_w, box_h)
+        return
+
+    if not pages:
+        _draw_mosaic_index(c, mosaic, pages, box_x, box_y, box_w, box_h)
+        return
+
+    # Convert PDF points to approximate preview pixels for thumbnail generation.
+    max_thumb_w = int(box_w / PT_PER_INCH * _SCREEN_DPI)
+    max_thumb_h = int(box_h / PT_PER_INCH * _SCREEN_DPI)
+    max_thumb_w = max(_MIN_THUMB_PX, min(max_thumb_w, _MAX_THUMB_PX))
+    max_thumb_h = max(_MIN_THUMB_PX, min(max_thumb_h, _MAX_THUMB_PX))
+    thumb = mosaic.get_thumbnail(max_size=(max_thumb_w, max_thumb_h))
+    thumb_bytes = _pil_to_bytes(thumb, fmt="JPEG", quality=_PREVIEW_JPEG_QUALITY)
+    thumb_reader = ImageReader(io.BytesIO(thumb_bytes))
+
+    scale_x = box_w / max(thumb.width, 1)
+    scale_y = box_h / max(thumb.height, 1)
+    scale = min(scale_x, scale_y)
+    draw_w = thumb.width * scale
+    draw_h = thumb.height * scale
+    dx = box_x + (box_w - draw_w) / 2.0
+    dy = box_y + (box_h - draw_h) / 2.0
+
+    c.drawImage(thumb_reader, dx, dy, width=draw_w, height=draw_h, preserveAspectRatio=True)
+
+    px_scale_x = draw_w / max(mosaic.width, 1)
+    px_scale_y = draw_h / max(mosaic.height, 1)
+
+    c.setStrokeColorRGB(0.22, 0.47, 0.72)
+    c.setLineWidth(0.6)
+    for tile in mosaic.layout.tiles:
+        tx = dx + tile.x_off * px_scale_x
+        ty = dy + draw_h - (tile.y_off + tile.height) * px_scale_y
+        tw = tile.width * px_scale_x
+        th = tile.height * px_scale_y
+        if tw > 0 and th > 0:
+            c.rect(tx, ty, tw, th, fill=0, stroke=1)
+
+    c.setStrokeColorRGB(0.82, 0.33, 0.05)
+    c.setLineWidth(1.0)
+    c.setDash([4, 3])
+    label_size = max(
+        _MIN_PAGE_LABEL_PT,
+        min(_MAX_PAGE_LABEL_PT, draw_w / max(len(pages), 1) * _PAGE_LABEL_FACTOR),
+    )
+    for page in pages:
+        px = dx + page.src_x * px_scale_x
+        py = dy + draw_h - (page.src_y + page.src_h) * px_scale_y
+        pw = page.src_w * px_scale_x
+        ph = page.src_h * px_scale_y
+        if pw > 0 and ph > 0:
+            c.rect(px, py, pw, ph, fill=0, stroke=1)
+
+    c.setDash([])
+    c.setFont("Helvetica-Bold", label_size)
+    c.setFillColorRGB(0.82, 0.33, 0.05)
+    for page in pages:
+        cx = dx + (page.src_x + page.src_w / 2.0) * px_scale_x
+        cy = dy + draw_h - (page.src_y + page.src_h / 2.0) * px_scale_y - label_size / 2.0
+        c.drawCentredString(cx, cy, str(page.page_index + 1))
+
+
 # ---------------------------------------------------------------------------
 # Cover page
 # ---------------------------------------------------------------------------
@@ -560,7 +640,7 @@ def _render_cover_page(
     info_lines = [
         f"Échelle fixe : {_format_scale(cfg.scale)}" if cfg.scale > 0 else "Échelle : auto",
     ]
-    tiles_pages_base = f"Tuiles source : {len(mosaic.layout.tiles)}    •    Pages atlas : {len(pages)}"
+    tiles_pages_base = f"Tuiles source : {len(mosaic.layout.tiles)}  |  Pages atlas : {len(pages)}"
     info_lines.append(
         tiles_pages_base + " (+ couverture + vue d'ensemble)" if cfg.atlas_pages else tiles_pages_base
     )
@@ -658,7 +738,7 @@ def _render_cover_page(
     map_w = overview_w - 2 * inner_margin
     map_h = overview_h - _OVERVIEW_TITLE_SPACE_PT
     if map_h > _MIN_MAP_H_TO_DRAW_PT:
-        _draw_mosaic_index(c, mosaic, pages, map_x, map_y, map_w, map_h)
+        _draw_mosaic_preview_with_index(c, mosaic, pages, map_x, map_y, map_w, map_h)
 
     c.restoreState()
 
@@ -699,76 +779,13 @@ def _render_overview_page(
     c.drawCentredString(
         page_w_pt / 2.0,
         page_h_pt - hdr_h + 1.5 * mm,
-        f"{len(mosaic.layout.tiles)} tuile(s) source   •   {len(pages)} page(s) atlas",
+        f"{len(mosaic.layout.tiles)} tuile(s) source  |  {len(pages)} page(s) atlas",
     )
 
     # ---- Mosaic thumbnail ----
     img_area_y = by
     img_area_h = ph - hdr_h - 2 * mm  # 2 mm gap below accent header
-    if PIL_AVAILABLE and mosaic.width > 0 and mosaic.height > 0:
-        # Compute thumbnail pixel size proportional to the available area
-        max_thumb_w = int(pw / PT_PER_INCH * 96)
-        max_thumb_h = int(img_area_h / PT_PER_INCH * 96)
-        max_thumb_w = max(_MIN_THUMB_PX, min(max_thumb_w, _MAX_THUMB_PX))
-        max_thumb_h = max(_MIN_THUMB_PX, min(max_thumb_h, _MAX_THUMB_PX))
-        thumb = mosaic.get_thumbnail(max_size=(max_thumb_w, max_thumb_h))
-        thumb_bytes = _pil_to_bytes(thumb, fmt="JPEG", quality=80)
-        thumb_reader = ImageReader(io.BytesIO(thumb_bytes))
-
-        # Fit thumbnail proportionally
-        sx = pw / max(thumb.width, 1)
-        sy = img_area_h / max(thumb.height, 1)
-        s = min(sx, sy)
-        dw = thumb.width * s
-        dh = thumb.height * s
-        dx = lx + (pw - dw) / 2.0
-        dy = img_area_y + (img_area_h - dh) / 2.0
-
-        c.drawImage(thumb_reader, dx, dy, width=dw, height=dh, preserveAspectRatio=True)
-
-        # Overlay: build a virtual mosaic bounding box for scaling
-        # (thumb pixels correspond to mosaic pixels via thumb_scale)
-        thumb_scale_x = thumb.width / max(mosaic.width, 1)
-        thumb_scale_y = thumb.height / max(mosaic.height, 1)
-        # We must use s (pt per thumb-pixel) for drawing vector overlays
-        # pt_per_mosaic_px = s * thumb_scale (thumb_scale ≈ same in x and y)
-        thumb_scale_avg = (thumb_scale_x + thumb_scale_y) / 2.0
-        pt_per_mpx = s * thumb_scale_avg
-
-        # Tile boundaries
-        c.setStrokeColorRGB(0.22, 0.47, 0.72)
-        c.setLineWidth(0.6)
-        for tile in mosaic.layout.tiles:
-            tx = dx + tile.x_off * pt_per_mpx
-            ty2 = dy + dh - (tile.y_off + tile.height) * pt_per_mpx
-            tw = tile.width * pt_per_mpx
-            th = tile.height * pt_per_mpx
-            if tw > 0 and th > 0:
-                c.rect(tx, ty2, tw, th, fill=0, stroke=1)
-
-        # Page boundaries and numbers
-        c.setStrokeColorRGB(0.82, 0.33, 0.05)
-        c.setLineWidth(1.0)
-        c.setDash([4, 3])
-        label_size = max(5.0, min(9.0, dw / max(len(pages), 1) * 0.5))
-        for page in pages:
-            px2 = dx + page.src_x * pt_per_mpx
-            py2 = dy + dh - (page.src_y + page.src_h) * pt_per_mpx
-            pw2 = page.src_w * pt_per_mpx
-            ph2 = page.src_h * pt_per_mpx
-            if pw2 > 0 and ph2 > 0:
-                c.rect(px2, py2, pw2, ph2, fill=0, stroke=1)
-
-        c.setDash([])
-        c.setFont("Helvetica-Bold", label_size)
-        c.setFillColorRGB(0.82, 0.33, 0.05)
-        for page in pages:
-            cx = dx + (page.src_x + page.src_w / 2.0) * pt_per_mpx
-            cy2 = dy + dh - (page.src_y + page.src_h / 2.0) * pt_per_mpx - label_size / 2.0
-            c.drawCentredString(cx, cy2, str(page.page_index + 1))
-    else:
-        # No PIL: just draw the vector index
-        _draw_mosaic_index(c, mosaic, pages, lx, img_area_y, pw, img_area_h)
+    _draw_mosaic_preview_with_index(c, mosaic, pages, lx, img_area_y, pw, img_area_h)
 
     c.restoreState()
 
@@ -890,34 +907,15 @@ def _render_atlas_content_page(
     c.setStrokeColorRGB(*_COL_ACCENT)
     c.roundRect(lx, header_y, pw, _HEADER_H_PT, 8, fill=1, stroke=0)
 
-    tile_labels = ", ".join(page.tile_names[:_MAX_HEADER_TILES])
-    # remaining_tiles is negative when fewer than _MAX_HEADER_TILES tiles are present;
-    # the `> 0` guard ensures the suffix is only appended when tiles were truncated.
-    remaining_tiles = len(page.tile_names) - _MAX_HEADER_TILES
-    if remaining_tiles > 0:
-        tile_labels += f" … (+{remaining_tiles})"
-
     c.setFillColorRGB(*_COL_WHITE)
-    c.setFont("Helvetica-Bold", 14)
-    c.drawString(lx + 5 * mm, header_y + _HEADER_H_PT - 6 * mm, folder_label or "Atlas")
-    c.setFont("Helvetica", 8.6)
+    c.setFont("Helvetica-Bold", 12)
+    c.drawString(lx + 4 * mm, header_y + _HEADER_H_PT - 5.3 * mm, folder_label or "Atlas")
+    c.setFont("Helvetica", 8.4)
     c.drawString(
-        lx + 5 * mm,
-        header_y + _HEADER_H_PT - 11.5 * mm,
+        lx + 4 * mm,
+        header_y + _HEADER_H_PT - 10.2 * mm,
         f"Page {page.page_index + 1}/{total_pages}"
-        f"   \u2022   L{page.row + 1} C{page.col + 1}",
-    )
-    if page.has_geo:
-        c.drawString(
-            lx + 5 * mm,
-            header_y + _HEADER_H_PT - 16.8 * mm,
-            f"Emprise : X\u202f{page.geo_min_x:,.0f}\u202f\u2192\u202f{page.geo_max_x:,.0f} m"
-            f"  |  Y\u202f{page.geo_min_y:,.0f}\u202f\u2192\u202f{page.geo_max_y:,.0f} m",
-        )
-    c.drawString(
-        lx + 5 * mm,
-        header_y + _HEADER_H_PT - 22.1 * mm,
-        f"Tuiles : {_shorten_text(tile_labels or '—', 100)}",
+        f"  |  L{page.row + 1} C{page.col + 1}",
     )
 
     # ── Image frame (decorative border around map) ──────────────────────────
