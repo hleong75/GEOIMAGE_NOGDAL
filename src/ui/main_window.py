@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
-from typing import Optional
+from typing import Optional, List
 
 from PyQt6.QtCore import Qt, QThread, pyqtSignal, QObject
 from PyQt6.QtGui import QAction, QDragEnterEvent, QDropEvent, QIcon, QPixmap
@@ -57,36 +57,27 @@ class _ConvertWorker(QObject):
     finished = pyqtSignal(str)             # output path
     error = pyqtSignal(str)
 
-    def __init__(self, folder: Path, settings_panel: SettingsPanel) -> None:
+    def __init__(
+        self,
+        mosaic: Mosaic,
+        output_name: str,
+        default_output_dir: Path,
+        settings_panel: SettingsPanel,
+    ) -> None:
         super().__init__()
-        self._folder = folder
+        self._mosaic = mosaic
+        self._output_name = output_name
+        self._default_output_dir = default_output_dir
         self._sp = settings_panel
 
     def run(self) -> None:
-        from ..core.mosaic import Mosaic
         from ..core.pdf_converter import PDFConfig, convert_to_pdf
-        from ..core.scanner import scan_directory
 
         try:
-            self.progress.emit(0, 1, "Scan du dossier…")
-            result = scan_directory(self._folder)
-
-            if result.total_files == 0:
-                self.error.emit("Aucun fichier raster trouvé.")
-                return
-
-            self.progress.emit(0, 1, "Reconstruction mosaïque…")
-
-            mosaic: Optional[Mosaic] = None
-            if result.has_vrt:
-                mosaic = Mosaic.from_vrt(result.vrt_files[0])
-            if mosaic is None:
-                mosaic = Mosaic.from_files([f.path for f in result.raster_files])
-
             out_dir = self._sp.output_dir
             if not str(out_dir).strip() or str(out_dir) == ".":
-                out_dir = self._folder
-            out_path = out_dir / f"{self._folder.name}.pdf"
+                out_dir = self._default_output_dir
+            out_path = out_dir / f"{self._output_name}.pdf"
 
             cfg = PDFConfig(
                 dpi=self._sp.dpi,
@@ -100,7 +91,7 @@ class _ConvertWorker(QObject):
             def cb(cur: int, total: int, msg: str) -> None:
                 self.progress.emit(cur, total, msg)
 
-            output = convert_to_pdf(mosaic, cfg, progress_callback=cb)
+            output = convert_to_pdf(self._mosaic, cfg, progress_callback=cb)
             self.finished.emit(str(output))
 
         except Exception as exc:
@@ -115,6 +106,8 @@ class MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
         self._current_folder: Optional[Path] = None
+        self._current_folders: list[Path] = []
+        self._selected_region: Optional[tuple[int, int, int, int]] = None
         self._current_mosaic: Optional[Mosaic] = None
         self._license = LicenseManager()
         self._processor = BatchProcessor(max_workers=2, license_manager=self._license)
@@ -142,6 +135,7 @@ class MainWindow(QMainWindow):
         top_splitter = QSplitter(Qt.Orientation.Horizontal)
 
         self._preview = PreviewWidget()
+        self._preview.selection_changed.connect(self._on_preview_selection_changed)
         self._preview.setMinimumWidth(300)
         top_splitter.addWidget(self._preview)
 
@@ -219,7 +213,7 @@ class MainWindow(QMainWindow):
         files = [Path(u.toLocalFile()) for u in urls if Path(u.toLocalFile()).is_file()]
 
         if folders:
-            self._load_folder(folders[0])
+            self._load_folders(folders)
             for extra in folders[1:]:
                 self._batch_panel.add_folder(extra)
         elif files:
@@ -235,9 +229,21 @@ class MainWindow(QMainWindow):
             self._load_folder(Path(folder))
 
     def _load_folder(self, folder: Path) -> None:
-        self._current_folder = folder
-        self._status_bar.showMessage(f"Chargement : {folder}")
-        self._log.info(f"Ouverture du dossier : {folder}")
+        self._load_folders([folder])
+
+    def _load_folders(self, folders: List[Path]) -> None:
+        if not folders:
+            return
+
+        self._current_folders = folders
+        self._current_folder = folders[0]
+        self._selected_region = None
+        if len(folders) == 1:
+            self._status_bar.showMessage(f"Chargement : {folders[0]}")
+            self._log.info(f"Ouverture du dossier : {folders[0]}")
+        else:
+            self._status_bar.showMessage(f"Chargement : {len(folders)} dossiers")
+            self._log.info(f"Ouverture de {len(folders)} dossiers pour aperçu mosaïque unifié.")
         self._preview.clear()
         self._settings.set_convert_enabled(False)
 
@@ -246,7 +252,7 @@ class MainWindow(QMainWindow):
 
         # Scan in background
         self._scan_thread = QThread()
-        self._scan_worker = _ScanWorker(folder)
+        self._scan_worker = _ScanWorker(folders)
         self._scan_worker.moveToThread(self._scan_thread)
         self._scan_thread.started.connect(self._scan_worker.run)
         self._scan_worker.finished.connect(self._on_scan_done)
@@ -294,8 +300,8 @@ class MainWindow(QMainWindow):
             )
             return
 
-        if self._current_folder is None:
-            QMessageBox.information(self, "Aucun dossier", "Ouvrez d'abord un dossier IGN.")
+        if self._current_mosaic is None:
+            QMessageBox.information(self, "Aucune mosaïque", "Ouvrez d'abord un dossier IGN.")
             return
 
         if self._thread and self._thread.isRunning():
@@ -307,8 +313,32 @@ class MainWindow(QMainWindow):
         self._settings.set_convert_enabled(False)
         self._log.info("Démarrage de la conversion…")
 
+        mosaic_to_convert = self._current_mosaic
+        if self._selected_region is not None:
+            try:
+                x, y, w, h = self._selected_region
+                mosaic_to_convert = self._current_mosaic.cropped(x, y, w, h)
+                self._log.info(
+                    f"Zone sélectionnée appliquée : x={x}, y={y}, largeur={w}, hauteur={h}"
+                )
+            except Exception as exc:
+                self._progress.setVisible(False)
+                self._settings.set_convert_enabled(True)
+                QMessageBox.critical(self, "Zone invalide", str(exc))
+                return
+
+        if self._current_folder is not None and len(self._current_folders) <= 1:
+            output_name = self._current_folder.name
+            default_output_dir = self._current_folder
+        elif self._current_folders:
+            output_name = f"{self._current_folders[0].name}_multi"
+            default_output_dir = self._current_folders[0]
+        else:
+            output_name = "export"
+            default_output_dir = Path(".")
+
         self._thread = QThread()
-        self._worker = _ConvertWorker(self._current_folder, self._settings)
+        self._worker = _ConvertWorker(mosaic_to_convert, output_name, default_output_dir, self._settings)
         self._worker.moveToThread(self._thread)
         self._thread.started.connect(self._worker.run)
         self._worker.progress.connect(self._on_convert_progress)
@@ -340,6 +370,14 @@ class MainWindow(QMainWindow):
     def _on_thread_done(self) -> None:
         self._progress.setVisible(False)
         self._settings.set_convert_enabled(True)
+
+    def _on_preview_selection_changed(self, region: Optional[tuple[int, int, int, int]]) -> None:
+        self._selected_region = region
+        if region is None:
+            self._status_bar.showMessage("Aucune zone sélectionnée (conversion complète)")
+        else:
+            x, y, w, h = region
+            self._status_bar.showMessage(f"Zone sélectionnée : x={x}, y={y}, {w}×{h} px")
 
     def _on_activate_license(self) -> None:
         key, ok = QInputDialog.getText(
@@ -381,13 +419,30 @@ class _ScanWorker(QObject):
     finished = pyqtSignal(object)
     error = pyqtSignal(str)
 
-    def __init__(self, folder: Path) -> None:
+    def __init__(self, folders: List[Path]) -> None:
         super().__init__()
-        self._folder = folder
+        self._folders = folders
 
     def run(self) -> None:
         try:
-            result = scan_directory(self._folder)
+            all_results = [scan_directory(folder) for folder in self._folders]
+            if not all_results:
+                self.error.emit("Aucun dossier à scanner.")
+                return
+
+            result = all_results[0]
+            for extra in all_results[1:]:
+                result.raster_files.extend(extra.raster_files)
+                result.vrt_files.extend(extra.vrt_files)
+                result.tab_files.extend(extra.tab_files)
+                result.errors.extend(extra.errors)
+            result.raster_files.sort(
+                key=lambda f: (
+                    -(f.grid_y or 0),
+                    f.grid_x or 0,
+                    str(f.path),
+                )
+            )
             self.finished.emit(result)
         except Exception as exc:
             self.error.emit(str(exc))
@@ -405,7 +460,7 @@ class _ThumbnailWorker(QObject):
             mosaic: Optional[Mosaic] = None
             result = self._result
 
-            if result.has_vrt:
+            if result.has_vrt and len(result.vrt_files) == 1:
                 mosaic = Mosaic.from_vrt(result.vrt_files[0])
 
             if mosaic is None:

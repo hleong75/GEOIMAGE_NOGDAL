@@ -10,6 +10,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from src.core.mosaic import (
     build_mosaic_from_vrt,
     build_mosaic_from_filenames,
+    Mosaic,
     MosaicLayout,
     TileInfo,
 )
@@ -205,5 +206,30 @@ def test_mosaic_from_files_tries_georef():
     # No geo_extent: filename-based layout doesn't set one
     assert mosaic.geo_extent is None
 
+
+def test_mosaic_cropped_limits_to_selected_region():
+    layout = _make_layout()
+    mosaic = Mosaic(layout)
+
+    cropped = mosaic.cropped(50, 40, 120, 110)
+
+    assert cropped.width == 120
+    assert cropped.height == 110
+    assert len(cropped.layout.tiles) == 4
+
+    # top-left tile in crop starts at origin
+    t0 = next(t for t in cropped.layout.tiles if t.path == Path("a.tif"))
+    assert t0.x_off == 0
+    assert t0.y_off == 0
+    assert t0.width == 50
+    assert t0.height == 60
+
+
+def test_mosaic_cropped_rejects_empty_region():
+    mosaic = Mosaic(_make_layout())
+    import pytest
+
+    with pytest.raises(ValueError):
+        mosaic.cropped(0, 0, 0, 100)
 
 

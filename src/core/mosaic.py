@@ -514,6 +514,81 @@ class Mosaic:
         """Lambert 93 bounding box of the full mosaic, or None."""
         return self.layout.geo_extent
 
+    def cropped(self, x_off: int, y_off: int, width: int, height: int) -> "Mosaic":
+        """
+        Return a new Mosaic limited to the requested pixel region.
+
+        The resulting mosaic keeps tile references to source files and only
+        adjusts tile offsets/sizes so rendering remains tile-on-demand.
+        """
+        if width <= 0 or height <= 0:
+            raise ValueError("La zone sélectionnée est invalide (largeur/hauteur <= 0).")
+
+        x1 = max(0, x_off)
+        y1 = max(0, y_off)
+        x2 = min(self.width, x1 + width)
+        y2 = min(self.height, y1 + height)
+        if x2 <= x1 or y2 <= y1:
+            raise ValueError("La zone sélectionnée est hors de la mosaïque.")
+
+        cropped_w = x2 - x1
+        cropped_h = y2 - y1
+        relevant = self.layout.tiles_in_region(x1, y1, cropped_w, cropped_h)
+        new_tiles: list[TileInfo] = []
+
+        for tile in relevant:
+            tx1, ty1 = tile.x_off, tile.y_off
+            tx2, ty2 = tile.x_off + tile.width, tile.y_off + tile.height
+            ix1 = max(x1, tx1)
+            iy1 = max(y1, ty1)
+            ix2 = min(x2, tx2)
+            iy2 = min(y2, ty2)
+            if ix2 <= ix1 or iy2 <= iy1:
+                continue
+
+            new_tiles.append(
+                TileInfo(
+                    path=tile.path,
+                    x_off=ix1 - x1,
+                    y_off=iy1 - y1,
+                    width=ix2 - ix1,
+                    height=iy2 - iy1,
+                    grid_x=tile.grid_x,
+                    grid_y=tile.grid_y,
+                    geo=tile.geo,
+                )
+            )
+
+        new_geo = None
+        if self.geo_extent is not None and self.geo_extent.is_valid() and self.pixel_size_m > 0:
+            from .georef import GeoInfo as _GeoInfo
+
+            min_x = self.geo_extent.min_x + x1 * self.pixel_size_m
+            max_x = min_x + cropped_w * self.pixel_size_m
+            max_y = self.geo_extent.max_y - y1 * self.pixel_size_m
+            min_y = max_y - cropped_h * self.pixel_size_m
+            new_geo = _GeoInfo(
+                min_x=min_x,
+                min_y=min_y,
+                max_x=max_x,
+                max_y=max_y,
+                pixel_size_x=self.pixel_size_m,
+                pixel_size_y=self.pixel_size_m,
+                width_px=cropped_w,
+                height_px=cropped_h,
+                source="cropped_mosaic",
+            )
+
+        return Mosaic(
+            MosaicLayout(
+                tiles=new_tiles,
+                total_width=cropped_w,
+                total_height=cropped_h,
+                pixel_size_m=self.pixel_size_m,
+                geo_extent=new_geo,
+            )
+        )
+
     def get_region(
         self,
         x_off: int,
