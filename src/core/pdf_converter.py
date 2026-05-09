@@ -294,10 +294,11 @@ def compute_pages_at_scale(mosaic: Mosaic, cfg: PDFConfig) -> List[PageInfo]:
             # border tiles are effectively cut on content pages.
             # Note: after this adjustment, (col,row) remains the logical grid
             # index while (src_x, src_y) is the effective source position.
-            if not cfg.optimal_overlap and src_x + src_w > mosaic.width:
-                src_x = max(0, mosaic.width - src_w)
-            if not cfg.optimal_overlap and src_y + src_h > mosaic.height:
-                src_y = max(0, mosaic.height - src_h)
+            if not cfg.optimal_overlap:
+                if src_x + src_w > mosaic.width:
+                    src_x = max(0, mosaic.width - src_w)
+                if src_y + src_h > mosaic.height:
+                    src_y = max(0, mosaic.height - src_h)
 
             # Lambert 93 extents for this page
             has_geo = False
