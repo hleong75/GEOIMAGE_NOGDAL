@@ -56,10 +56,10 @@ PT_PER_INCH = 72.0
 
 # Atlas page layout constants (points)
 # These define reserved areas on content pages for headers/footers.
-_HEADER_H_PT = 48.0   # Compact top header to maximize map area
+_HEADER_H_PT = 16.0   # Minimal top header on content pages (tile position only)
 _GEO_H_PT    = 0.0    # Lambert 93 extent now embedded in the header
 _TILES_H_PT  = 0.0    # Tile list now embedded in the header
-_FOOTER_H_PT = 20.0   # Bottom footer bar (source | pagination | scale reminder)
+_FOOTER_H_PT = 10.0   # Lower, slimmer footer to maximize map area
 # Total vertical overhead on content pages
 _OVERHEAD_PT = _HEADER_H_PT + _GEO_H_PT + _TILES_H_PT + _FOOTER_H_PT
 
@@ -941,20 +941,17 @@ def _render_atlas_content_page(
 
     c.saveState()
 
-    # ── Accent header (rounded rect) ────────────────────────────────────────
+    # ── Minimal header (tile position only) ─────────────────────────────────
     c.setFillColorRGB(*_COL_ACCENT)
     c.setStrokeColorRGB(*_COL_ACCENT)
-    c.roundRect(lx, header_y, pw, _HEADER_H_PT, 8, fill=1, stroke=0)
+    c.roundRect(lx, header_y, pw, _HEADER_H_PT, 4, fill=1, stroke=0)
 
     c.setFillColorRGB(*_COL_WHITE)
-    c.setFont("Helvetica-Bold", 12)
-    c.drawString(lx + 4 * mm, header_y + _HEADER_H_PT - 5.3 * mm, folder_label or "Atlas")
-    c.setFont("Helvetica", 8.4)
+    c.setFont("Helvetica-Bold", 8.2)
     c.drawString(
         lx + 4 * mm,
-        header_y + _HEADER_H_PT - 10.2 * mm,
-        f"Page {page.page_index + 1}/{total_pages}"
-        f"  |  L{page.row + 1} C{page.col + 1}",
+        header_y + _HEADER_H_PT - 4.1 * mm,
+        f"L{page.row + 1} C{page.col + 1}",
     )
 
     # ── Image frame (decorative border around map) ──────────────────────────
@@ -983,18 +980,10 @@ def _render_atlas_content_page(
     c.line(lx, footer_top, lx + pw, footer_top)
 
     c.setFillColorRGB(*_COL_MUTED)
-    c.setFont("Helvetica", 7.6)
-    first_tile_name = page.tile_names[0] if page.tile_names else ""
-    c.drawString(lx, footer_y + 2.7 * mm, _shorten_text(first_tile_name, 60))
-    c.setFillColorRGB(*_COL_TEXT)
-    c.drawCentredString(
-        lx + pw / 2.0,
-        footer_y + 2.7 * mm,
-        f"Imprimer à 100 % pour respecter l'échelle",
-    )
+    c.setFont("Helvetica", 7.0)
     c.drawRightString(
         lx + pw,
-        footer_y + 2.7 * mm,
+        footer_y + 1.2 * mm,
         f"PDF {page.page_index + 1}/{total_pages}",
     )
 
