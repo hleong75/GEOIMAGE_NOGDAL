@@ -673,12 +673,14 @@ class Mosaic:
         for i, tile in enumerate(self.layout.tiles, start=1):
             try:
                 img = _open_image(tile.path)
-                tile_width_px = max(1, int(tile.width))
-                tile_height_px = max(1, int(tile.height))
+                tile_width = int(tile.width)
+                tile_height = int(tile.height)
+                if tile_width <= 0 or tile_height <= 0:
+                    continue
                 src_x1 = max(0, int(tile.src_x_off))
                 src_y1 = max(0, int(tile.src_y_off))
-                src_x2 = min(img.width, src_x1 + tile_width_px)
-                src_y2 = min(img.height, src_y1 + tile_height_px)
+                src_x2 = min(img.width, src_x1 + tile_width)
+                src_y2 = min(img.height, src_y1 + tile_height)
                 if src_x2 <= src_x1 or src_y2 <= src_y1:
                     continue
 
@@ -686,8 +688,8 @@ class Mosaic:
                 if img.mode != "RGB":
                     img = img.convert("RGB")
 
-                target_width = max(1, int(tile_width_px * scale))
-                target_height = max(1, int(tile_height_px * scale))
+                target_width = max(1, int(tile_width * scale))
+                target_height = max(1, int(tile_height * scale))
                 if img.size != (target_width, target_height):
                     img = img.resize((target_width, target_height), Image.LANCZOS)
                 px = max(0, int(tile.x_off * scale))
