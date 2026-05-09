@@ -292,6 +292,8 @@ def compute_pages_at_scale(mosaic: Mosaic, cfg: PDFConfig) -> List[PageInfo]:
             # Shift edge pages back so we always render a full-size region.
             # This prevents blank margins on last column/row and ensures
             # border tiles are effectively cut on content pages.
+            # Note: after this adjustment, (col,row) remains the logical grid
+            # index while (src_x, src_y) is the effective source position.
             if not cfg.optimal_overlap and src_x + src_w > mosaic.width:
                 src_x = max(0, mosaic.width - src_w)
             if not cfg.optimal_overlap and src_y + src_h > mosaic.height:

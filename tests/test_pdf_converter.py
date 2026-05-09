@@ -460,8 +460,10 @@ def test_compute_pages_at_scale_last_page_shifted_to_mosaic_edge():
 
     right_col = max(p.col for p in pages)
     bottom_row = max(p.row for p in pages)
-    last_col_page = next(p for p in pages if p.col == right_col and p.row == 0)
-    last_row_page = next(p for p in pages if p.row == bottom_row and p.col == 0)
+    last_col_page = next((p for p in pages if p.col == right_col and p.row == 0), None)
+    last_row_page = next((p for p in pages if p.row == bottom_row and p.col == 0), None)
 
+    assert last_col_page is not None
+    assert last_row_page is not None
     assert last_col_page.src_x + last_col_page.src_w == mosaic.width
     assert last_row_page.src_y + last_row_page.src_h == mosaic.height
