@@ -333,7 +333,7 @@ class MainWindow(QMainWindow):
             output_name = self._current_folder.name
             default_output_dir = self._current_folder
         elif self._current_folders:
-            output_name = f"{self._current_folders[0].name}_multi"
+            output_name = f"{self._current_folders[0].name}_combined"
             default_output_dir = self._current_folders[0]
         else:
             output_name = "export"

@@ -522,7 +522,10 @@ class Mosaic:
         adjusts tile offsets/sizes so rendering remains tile-on-demand.
         """
         if width <= 0 or height <= 0:
-            raise ValueError("La zone sélectionnée est invalide (largeur/hauteur <= 0).")
+            raise ValueError(
+                "La zone sélectionnée est invalide : largeur et hauteur doivent être > 0 "
+                f"(reçu largeur={width}, hauteur={height})."
+            )
 
         x1 = max(0, x_off)
         y1 = max(0, y_off)

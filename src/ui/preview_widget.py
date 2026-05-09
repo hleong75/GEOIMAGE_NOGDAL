@@ -58,7 +58,7 @@ class _ImageLabel(QLabel):
         self.update()
         self.selection_changed.emit(None)
 
-    def get_selected_region_original(self) -> Optional[tuple[int, int, int, int]]:
+    def get_selected_region_in_original_coordinates(self) -> Optional[tuple[int, int, int, int]]:
         if self._orig_pixmap is None or self._selection_rect is None:
             return None
         shown = self.pixmap()
@@ -104,7 +104,7 @@ class _ImageLabel(QLabel):
     def mouseReleaseEvent(self, event) -> None:
         if event.button() == Qt.MouseButton.LeftButton and self._drag_start is not None:
             self._drag_start = None
-            region = self.get_selected_region_original()
+            region = self.get_selected_region_in_original_coordinates()
             if region is None:
                 self._selection_rect = None
             self.update()
@@ -188,4 +188,4 @@ class PreviewWidget(QWidget):
         self._placeholder.show()
 
     def get_selected_region(self) -> Optional[tuple[int, int, int, int]]:
-        return self._label.get_selected_region_original()
+        return self._label.get_selected_region_in_original_coordinates()
