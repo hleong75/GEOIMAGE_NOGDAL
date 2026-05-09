@@ -62,6 +62,9 @@ class TileInfo:
     grid_y: Optional[int] = None
     # Full geographic info (from .tab / GeoTIFF), may be None
     geo: Optional["GeoInfo"] = None
+    # Pixel offset in the source image for cropped virtual tiles
+    src_x_off: int = 0
+    src_y_off: int = 0
 
 
 @dataclass
@@ -559,6 +562,8 @@ class Mosaic:
                     grid_x=tile.grid_x,
                     grid_y=tile.grid_y,
                     geo=tile.geo,
+                    src_x_off=tile.src_x_off + (ix1 - tx1),
+                    src_y_off=tile.src_y_off + (iy1 - ty1),
                 )
             )
 
@@ -615,12 +620,17 @@ class Mosaic:
         for i, tile in enumerate(relevant):
             try:
                 tile_img = _open_image(tile.path)
-                # Crop to the intersection with the requested region
-                # In tile-local coordinates:
-                crop_x1 = max(0, x_off - tile.x_off)
-                crop_y1 = max(0, y_off - tile.y_off)
-                crop_x2 = min(tile.width, x_off + width - tile.x_off)
-                crop_y2 = min(tile.height, y_off + height - tile.y_off)
+                # Crop to the intersection with the requested region.
+                # Tile geometry is in mosaic coordinates; crop coordinates are
+                # converted to source-image coordinates via src_*_off.
+                ix1 = max(x_off, tile.x_off)
+                iy1 = max(y_off, tile.y_off)
+                ix2 = min(x_off + width, tile.x_off + tile.width)
+                iy2 = min(y_off + height, tile.y_off + tile.height)
+                crop_x1 = tile.src_x_off + (ix1 - tile.x_off)
+                crop_y1 = tile.src_y_off + (iy1 - tile.y_off)
+                crop_x2 = tile.src_x_off + (ix2 - tile.x_off)
+                crop_y2 = tile.src_y_off + (iy2 - tile.y_off)
 
                 if crop_x2 <= crop_x1 or crop_y2 <= crop_y1:
                     continue
@@ -631,8 +641,8 @@ class Mosaic:
                     cropped = cropped.convert("RGB")
 
                 # Paste position on canvas
-                paste_x = tile.x_off + crop_x1 - x_off
-                paste_y = tile.y_off + crop_y1 - y_off
+                paste_x = ix1 - x_off
+                paste_y = iy1 - y_off
                 canvas.paste(cropped, (paste_x, paste_y))
             except Exception as exc:
                 logger.warning("Impossible de charger la tuile %s: %s", tile.path, exc)

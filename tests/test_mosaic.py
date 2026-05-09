@@ -235,3 +235,31 @@ def test_mosaic_cropped_rejects_empty_region():
 
     with pytest.raises(ValueError):
         mosaic.cropped(0, 0, 100, 0)
+
+
+def test_mosaic_cropped_preserves_source_offsets():
+    """Cropping must keep source-image offsets so exported pixels match selection."""
+    from PIL import Image
+
+    with tempfile.TemporaryDirectory() as tmp:
+        img_path = Path(tmp) / "tile.png"
+        img = Image.new("RGB", (10, 4), color=(0, 0, 0))
+        for x in range(10):
+            for y in range(4):
+                img.putpixel((x, y), (x * 20, y * 50, 0))
+        img.save(img_path)
+
+        layout = MosaicLayout(
+            tiles=[TileInfo(path=img_path, x_off=0, y_off=0, width=10, height=4)],
+            total_width=10,
+            total_height=4,
+        )
+        mosaic = Mosaic(layout)
+
+        cropped = mosaic.cropped(6, 0, 3, 4)
+        region = cropped.get_region(0, 0, 3, 4)
+
+    assert region.size == (3, 4)
+    # Selected x-range starts at source x=6, so first output pixel must match x=6.
+    assert region.getpixel((0, 0)) == (120, 0, 0)
+    assert region.getpixel((2, 3)) == (160, 150, 0)
