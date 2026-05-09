@@ -327,7 +327,7 @@ class MainWindow(QMainWindow):
                 QMessageBox.critical(self, "Zone invalide", str(exc))
                 return
 
-        if self._current_folder is not None and len(self._current_folders) <= 1:
+        if len(self._current_folders) == 1 and self._current_folder is not None:
             output_name = self._current_folder.name
             default_output_dir = self._current_folder
         elif self._current_folders:

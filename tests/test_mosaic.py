@@ -5,6 +5,8 @@ import tempfile
 from pathlib import Path
 from xml.etree import ElementTree as ET
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.core.mosaic import (
@@ -227,9 +229,7 @@ def test_mosaic_cropped_limits_to_selected_region():
 
 def test_mosaic_cropped_rejects_empty_region():
     mosaic = Mosaic(_make_layout())
-    import pytest
 
     with pytest.raises(ValueError):
         mosaic.cropped(0, 0, 0, 100)
-
 
