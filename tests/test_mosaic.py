@@ -57,10 +57,41 @@ def test_vrt_mosaic_layout():
         t0 = next(t for t in layout.tiles if t.x_off == 0)
         assert t0.width == 10000
         assert t0.height == 10000
+        assert t0.src_x_off == 0
+        assert t0.src_y_off == 0
 
         # Second tile at (10000, 0)
         t1 = next(t for t in layout.tiles if t.x_off == 10000)
         assert t1.width == 10000
+    finally:
+        vrt_path.unlink(missing_ok=True)
+
+
+def test_vrt_mosaic_keeps_repeated_source_with_different_dstrect():
+    vrt = """<VRTDataset rasterXSize="100" rasterYSize="50">
+      <VRTRasterBand dataType="Byte" band="1">
+        <SimpleSource>
+          <SourceFilename relativeToVRT="1">tile.tif</SourceFilename>
+          <SrcRect xOff="0" yOff="0" xSize="50" ySize="50"/>
+          <DstRect xOff="0" yOff="0" xSize="50" ySize="50"/>
+        </SimpleSource>
+        <SimpleSource>
+          <SourceFilename relativeToVRT="1">tile.tif</SourceFilename>
+          <SrcRect xOff="50" yOff="0" xSize="50" ySize="50"/>
+          <DstRect xOff="50" yOff="0" xSize="50" ySize="50"/>
+        </SimpleSource>
+      </VRTRasterBand>
+    </VRTDataset>"""
+    with tempfile.NamedTemporaryFile(suffix=".vrt", mode="w", delete=False) as f:
+        f.write(vrt)
+        vrt_path = Path(f.name)
+
+    try:
+        layout = build_mosaic_from_vrt(vrt_path)
+        assert layout is not None
+        assert len(layout.tiles) == 2
+        offsets = sorted((t.x_off, t.src_x_off) for t in layout.tiles)
+        assert offsets == [(0, 0), (50, 50)]
     finally:
         vrt_path.unlink(missing_ok=True)
 
