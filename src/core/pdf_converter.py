@@ -334,6 +334,7 @@ def _compute_axis_starts_optimal(total_size: int, page_size: int, min_overlap: i
     if page_size <= 0 or total_size <= page_size:
         return [0]
 
+    # Upper-bound overlap to page_size - 1 so stride remains >= 1 px.
     min_ov = max(0, min(min_overlap, page_size - 1))
     stride_limit = max(1, page_size - min_ov)
     span = total_size - page_size

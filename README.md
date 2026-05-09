@@ -68,9 +68,9 @@ python main.py
 
 1. **Glissez** un ou plusieurs dossiers IGN dans la zone de prévisualisation, ou utilisez **Fichier → Ouvrir dossier**
 2. Configurez DPI, orientation et dossier de sortie dans le panneau droit
-2.1 (Optionnel) activez **Chevauchement optimal (sans blancs)** et définissez un chevauchement minimal
-3. (Optionnel) tracez un rectangle dans l’aperçu pour limiter l’export à une zone
-4. Cliquez **🖨 Convertir en PDF**
+3. (Optionnel) activez **Chevauchement optimal (sans blancs)** et définissez un chevauchement minimal
+4. (Optionnel) tracez un rectangle dans l’aperçu pour limiter l’export à une zone
+5. Cliquez **🖨 Convertir en PDF**
 
 ### Mode CLI
 
