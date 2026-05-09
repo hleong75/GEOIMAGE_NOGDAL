@@ -333,7 +333,7 @@ class MainWindow(QMainWindow):
             output_name = self._current_folder.name
             default_output_dir = self._current_folder
         elif self._current_folders:
-            output_name = f"{self._current_folders[0].name}_combined"
+            output_name = f"{self._current_folders[0].name}_merged"
             default_output_dir = self._current_folders[0]
         else:
             output_name = "export"
@@ -438,6 +438,8 @@ class _ScanWorker(QObject):
                 merged.vrt_files.extend(res.vrt_files)
                 merged.tab_files.extend(res.tab_files)
                 merged.errors.extend(res.errors)
+            # Keep deterministic map-like order: highest Lambert Y first (north→south),
+            # then Lambert X (west→east).
             merged.raster_files.sort(
                 key=lambda f: (
                     -(f.grid_y or 0),
