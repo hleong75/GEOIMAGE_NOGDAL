@@ -15,6 +15,7 @@
 | 📐 Géoréférencement | Lecture fichiers `.tab` (MapInfo) et balises GeoTIFF internes |
 | 🖨️ PDF A4 exact | DPI configurable (72–1200), portrait/paysage, marges paramétrables |
 | 🖥️ Interface graphique | PyQt6, drag & drop, aperçu mosaïque, barre de progression |
+| ✂️ Zone de conversion | Sélection rectangulaire directe dans l’aperçu pour exporter seulement une emprise |
 | ⚡ Batch industriel | File d'attente multi-dossiers, multi-threading, gestion erreurs |
 | 💾 Optimisation mémoire | Rendu tuile par tuile — la mosaïque complète n'est jamais en RAM |
 | 🔑 Système de licence | Clé locale HMAC, mode démo (3 exports), activation sans réseau |
@@ -65,9 +66,10 @@ pip install -r requirements.txt
 python main.py
 ```
 
-1. **Glissez** un dossier IGN dans la zone de prévisualisation, ou utilisez **Fichier → Ouvrir dossier**
+1. **Glissez** un ou plusieurs dossiers IGN dans la zone de prévisualisation, ou utilisez **Fichier → Ouvrir dossier**
 2. Configurez DPI, orientation et dossier de sortie dans le panneau droit
-3. Cliquez **🖨 Convertir en PDF**
+3. (Optionnel) tracez un rectangle dans l’aperçu pour limiter l’export à une zone
+4. Cliquez **🖨 Convertir en PDF**
 
 ### Mode CLI
 
