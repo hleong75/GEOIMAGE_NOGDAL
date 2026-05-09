@@ -288,7 +288,7 @@ class MainWindow(QMainWindow):
         # Build mosaic & thumbnail in background
         self._progress.setRange(0, 0)
         self._progress.setValue(0)
-        self._status_bar.showMessage("Construction de la mosaïque preview…")
+        self._status_bar.showMessage("Construction de la mosaïque preview...")
         self._thumb_thread = QThread()
         self._thumb_worker = _ThumbnailWorker(result)
         self._thumb_worker.moveToThread(self._thumb_thread)
@@ -474,15 +474,16 @@ class _ScanWorker(QObject):
 
     def run(self) -> None:
         try:
-            total = max(1, len(self._folders))
-            all_results = []
-            self.progress.emit(0, total, "Scan des dossiers en cours…")
-            for i, folder in enumerate(self._folders, start=1):
-                all_results.append(scan_directory(folder))
-                self.progress.emit(i, total, f"Scan dossier {i}/{total} : {folder.name}")
-            if not all_results:
+            if not self._folders:
                 self.error.emit("Aucun dossier à scanner.")
                 return
+
+            total = len(self._folders)
+            all_results = []
+            self.progress.emit(0, total, "Scan des dossiers en cours...")
+            for i, folder in enumerate(self._folders, start=1):
+                all_results.append(scan_directory(folder))
+                self.progress.emit(i, total, f"Scan du dossier {i}/{total} : {folder.name}")
 
             merged = ScanResult(root_dir=self._folders[0])
             for res in all_results:
@@ -517,7 +518,7 @@ class _ThumbnailWorker(QObject):
             mosaic: Optional[Mosaic] = None
             result = self._result
 
-            self.progress.emit(0, 0, "Construction de la mosaïque preview…")
+            self.progress.emit(0, 0, "Construction de la mosaïque preview...")
             if result.has_vrt and len(result.vrt_files) == 1:
                 mosaic = Mosaic.from_vrt(result.vrt_files[0])
 
@@ -529,10 +530,10 @@ class _ThumbnailWorker(QObject):
                 mosaic = Mosaic.from_files(tile_paths)
 
             try:
-                def thumb_cb(cur: int, total: int) -> None:
+                def thumbnail_progress_callback(cur: int, total: int) -> None:
                     self.progress.emit(cur, total, f"Chargement aperçu carte : {cur}/{total}")
 
-                thumb = mosaic.get_thumbnail((600, 600), progress_callback=thumb_cb)
+                thumb = mosaic.get_thumbnail((600, 600), progress_callback=thumbnail_progress_callback)
             except Exception:
                 thumb = None
 
