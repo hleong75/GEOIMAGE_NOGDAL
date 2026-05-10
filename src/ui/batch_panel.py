@@ -299,7 +299,9 @@ class BatchPanel(QWidget):
     def _on_all_resources_toggled(self, enabled: bool) -> None:
         self._workers_spin.setEnabled(not enabled)
         if enabled:
-            self._processor.set_max_workers(self._processor.available_workers())
+            auto_workers = self._processor.available_workers()
+            self._workers_spin.setValue(auto_workers)
+            self._processor.set_max_workers(auto_workers)
         else:
             self._processor.set_max_workers(self._workers_spin.value())
 

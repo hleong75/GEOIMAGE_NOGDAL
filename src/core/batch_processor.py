@@ -96,6 +96,8 @@ class BatchProcessor:
     def set_max_workers(self, max_workers: int) -> None:
         """Update worker concurrency for future jobs."""
         with self._lock:
+            if any(t.is_alive() for t in self._threads):
+                return
             self.max_workers = self._normalize_workers(max_workers)
             self._semaphore = threading.Semaphore(self.max_workers)
 
