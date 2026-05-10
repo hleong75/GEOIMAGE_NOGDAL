@@ -15,7 +15,7 @@ class _DummyLicense:
         pass
 
 
-def test_batch_processor_normalizes_workers_on_init():
+def test_batch_processor_clamps_zero_workers_to_one_on_init():
     processor = BatchProcessor(max_workers=0, license_manager=_DummyLicense())
     assert processor.max_workers == 1
 
@@ -24,6 +24,9 @@ def test_batch_processor_set_max_workers_updates_value():
     processor = BatchProcessor(max_workers=2, license_manager=_DummyLicense())
     processor.set_max_workers(6)
     assert processor.max_workers == 6
+    for _ in range(6):
+        assert processor._semaphore.acquire(blocking=False)  # noqa: SLF001 - intentional for unit test
+    assert not processor._semaphore.acquire(blocking=False)  # noqa: SLF001 - intentional for unit test
 
 
 def test_batch_processor_available_workers_is_at_least_one():

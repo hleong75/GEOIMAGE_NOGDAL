@@ -173,7 +173,7 @@ class BatchPanel(QWidget):
 
         for w in (add_btn, clear_btn, self._start_btn, cancel_btn):
             tb.addWidget(w)
-        self._all_resources_check = QCheckBox("Moteur multitâche (toutes ressources)")
+        self._all_resources_check = QCheckBox("Toutes ressources CPU")
         self._all_resources_check.setToolTip(
             "Utilise automatiquement tous les cœurs CPU disponibles."
         )

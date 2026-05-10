@@ -70,7 +70,7 @@ class BatchProcessor:
 
     @staticmethod
     def available_workers() -> int:
-        """Return the number of available CPU cores for batch workers."""
+        """Return the OS-reported logical CPU count for batch workers."""
         return max(1, os.cpu_count() or 1)
 
     @staticmethod
