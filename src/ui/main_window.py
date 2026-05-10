@@ -331,13 +331,13 @@ class MainWindow(QMainWindow):
         self._progress.setVisible(False)
 
     def _target_preview_size(self) -> tuple[int, int]:
-        side = max(
+        target_size = max(
             self._preview.width(),
             self._preview.height(),
             _MIN_WIDGET_DIMENSION_PX,
         ) * _UI_PREVIEW_OVERSAMPLE
-        side = max(_UI_PREVIEW_MIN_SIZE_PX, min(side, _UI_PREVIEW_MAX_SIZE_PX))
-        return side, side
+        target_size = max(_UI_PREVIEW_MIN_SIZE_PX, min(target_size, _UI_PREVIEW_MAX_SIZE_PX))
+        return target_size, target_size
 
     def _on_convert(self) -> None:
         if not self._license.can_export:
