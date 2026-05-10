@@ -331,6 +331,11 @@ class MainWindow(QMainWindow):
         self._progress.setVisible(False)
 
     def _target_preview_size(self) -> tuple[int, int]:
+        """Compute a square preview target size from the current widget dimensions.
+
+        The size is oversampled to improve perceived sharpness, then clamped to
+        bounded limits to avoid excessive memory usage.
+        """
         target_size = max(
             self._preview.width(),
             self._preview.height(),

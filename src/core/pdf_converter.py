@@ -86,6 +86,7 @@ _MIN_THUMB_PX = 64
 _MAX_THUMB_PX = 1024
 # Point-to-pixel conversion for preview thumbnail sizing (visual estimate only).
 _SCREEN_DPI = 96
+# PNG keeps previews/pages lossless to preserve raster fidelity from input to PDF.
 _IMAGE_FORMAT = "PNG"
 
 # Approximate character width in points (used to truncate long tile lists)
@@ -366,9 +367,16 @@ def _compute_axis_starts_optimal(total_size: int, page_size: int, min_overlap: i
     return starts
 
 
-def _pil_to_bytes(img: "Image.Image", fmt: str = "PNG") -> bytes:
+def _pil_to_bytes(
+    img: "Image.Image",
+    fmt: str = "PNG",
+    quality: Optional[int] = None,
+) -> bytes:
     buf = io.BytesIO()
-    img.save(buf, format=fmt)
+    save_kwargs = {"format": fmt}
+    if quality is not None and fmt.upper() in {"JPEG", "WEBP"}:
+        save_kwargs["quality"] = quality
+    img.save(buf, **save_kwargs)
     return buf.getvalue()
 
 
