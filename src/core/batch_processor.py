@@ -96,8 +96,9 @@ class BatchProcessor:
     def set_max_workers(self, max_workers: int) -> None:
         """Update worker concurrency for future jobs.
 
-        No-op while jobs are running to avoid changing synchronization primitives
-        in-flight.
+        If active worker threads exist, this request is ignored and
+        ``max_workers`` remains unchanged to avoid replacing synchronization
+        primitives in-flight.
         """
         with self._lock:
             if any(t.is_alive() for t in self._threads):

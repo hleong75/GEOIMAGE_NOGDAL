@@ -40,3 +40,15 @@ def test_batch_processor_set_max_workers_noop_when_running_threads_exist():
     processor._threads = [_AliveThread()]  # noqa: SLF001 - intentional for unit test
     processor.set_max_workers(8)
     assert processor.max_workers == 2
+
+
+def test_batch_processor_set_max_workers_applies_after_threads_finish():
+    class _DeadThread:
+        @staticmethod
+        def is_alive() -> bool:
+            return False
+
+    processor = BatchProcessor(max_workers=2, license_manager=_DummyLicense())
+    processor._threads = [_DeadThread()]  # noqa: SLF001 - intentional for unit test
+    processor.set_max_workers(8)
+    assert processor.max_workers == 8
