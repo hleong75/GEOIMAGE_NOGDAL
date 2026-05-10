@@ -48,6 +48,8 @@ from .log_widget import LogWidget
 from .preview_widget import PreviewWidget
 from .settings_panel import SettingsPanel
 
+_UI_PREVIEW_MAX_SIZE_PX = 2048
+
 
 # ---------------------------------------------------------------------------
 # Worker thread for single-folder conversion
@@ -533,7 +535,10 @@ class _ThumbnailWorker(QObject):
                 def thumbnail_progress_callback(cur: int, total: int) -> None:
                     self.progress.emit(cur, total, f"Chargement aperçu carte : {cur}/{total}")
 
-                thumb = mosaic.get_thumbnail((600, 600), progress_callback=thumbnail_progress_callback)
+                thumb = mosaic.get_thumbnail(
+                    (_UI_PREVIEW_MAX_SIZE_PX, _UI_PREVIEW_MAX_SIZE_PX),
+                    progress_callback=thumbnail_progress_callback,
+                )
             except Exception:
                 thumb = None
 
