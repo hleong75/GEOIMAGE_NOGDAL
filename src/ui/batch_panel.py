@@ -179,7 +179,7 @@ class BatchPanel(QWidget):
         )
         self._all_resources_check.toggled.connect(self._on_all_resources_toggled)
         tb.addWidget(self._all_resources_check)
-        tb.addWidget(QLabel("Workers :"))
+        tb.addWidget(QLabel("Workers:"))
         self._workers_spin = QSpinBox()
         self._workers_spin.setRange(1, self._processor.available_workers())
         self._workers_spin.setValue(self._processor.max_workers)

@@ -71,7 +71,7 @@ class BatchProcessor:
     @staticmethod
     def available_workers() -> int:
         """Return OS logical CPU count, normalized to at least 1."""
-        return max(1, os.cpu_count() or 1)
+        return os.cpu_count() or 1
 
     @staticmethod
     def _normalize_workers(max_workers: int) -> int:
