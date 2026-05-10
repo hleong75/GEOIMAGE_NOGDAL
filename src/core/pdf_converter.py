@@ -86,8 +86,7 @@ _MIN_THUMB_PX = 64
 _MAX_THUMB_PX = 1024
 # Point-to-pixel conversion for preview thumbnail sizing (visual estimate only).
 _SCREEN_DPI = 96
-_PREVIEW_IMAGE_FORMAT = "PNG"
-_PAGE_IMAGE_FORMAT = "PNG"
+_IMAGE_FORMAT = "PNG"
 
 # Approximate character width in points (used to truncate long tile lists)
 _CHAR_WIDTH_APPROX_PT = 4.5
@@ -555,7 +554,7 @@ def _draw_mosaic_preview_with_index(
     max_thumb_w = max(_MIN_THUMB_PX, min(max_thumb_w, _MAX_THUMB_PX))
     max_thumb_h = max(_MIN_THUMB_PX, min(max_thumb_h, _MAX_THUMB_PX))
     thumb = mosaic.get_thumbnail(max_size=(max_thumb_w, max_thumb_h))
-    thumb_bytes = _pil_to_bytes(thumb, fmt=_PREVIEW_IMAGE_FORMAT)
+    thumb_bytes = _pil_to_bytes(thumb, fmt=_IMAGE_FORMAT)
     thumb_reader = ImageReader(io.BytesIO(thumb_bytes))
 
     scale_x = box_w / max(thumb.width, 1)
@@ -888,7 +887,7 @@ def _render_legacy_page(
 ) -> None:
     """Legacy rendering: image fills printable area with simple bottom label."""
     region = mosaic.get_region(page.src_x, page.src_y, page.src_w, page.src_h)
-    img_bytes = _pil_to_bytes(region, fmt=_PAGE_IMAGE_FORMAT)
+    img_bytes = _pil_to_bytes(region, fmt=_IMAGE_FORMAT)
     img_reader = ImageReader(io.BytesIO(img_bytes))
 
     scale_x = printable_w_pt / max(page.src_w, 1)
@@ -964,7 +963,7 @@ def _render_atlas_content_page(
     # ── Map image ──────────────────────────────────────────────────────────
     if img_h > 0 and img_w > 0 and page.src_w > 0 and page.src_h > 0:
         region = mosaic.get_region(page.src_x, page.src_y, page.src_w, page.src_h)
-        img_bytes = _pil_to_bytes(region, fmt=_PAGE_IMAGE_FORMAT)
+        img_bytes = _pil_to_bytes(region, fmt=_IMAGE_FORMAT)
         img_reader = ImageReader(io.BytesIO(img_bytes))
         c.drawImage(
             img_reader,
