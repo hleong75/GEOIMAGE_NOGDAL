@@ -709,14 +709,17 @@ class Mosaic:
         for i, tile in enumerate(self.layout.tiles, start=1):
             try:
                 img = _open_image(tile.path)
-                crop_x1 = max(0, tile.src_x_off)
-                crop_y1 = max(0, tile.src_y_off)
-                crop_x2 = crop_x1 + max(1, tile.width)
-                crop_y2 = crop_y1 + max(1, tile.height)
+                src_w, src_h = img.size
+                crop_x1 = max(0, min(tile.src_x_off, src_w))
+                crop_y1 = max(0, min(tile.src_y_off, src_h))
+                crop_x2 = max(crop_x1, min(tile.src_x_off + max(1, tile.width), src_w))
+                crop_y2 = max(crop_y1, min(tile.src_y_off + max(1, tile.height), src_h))
+                if crop_x2 <= crop_x1 or crop_y2 <= crop_y1:
+                    continue
                 img = img.crop((crop_x1, crop_y1, crop_x2, crop_y2))
 
-                target_w = max(1, int(tile.width * scale))
-                target_h = max(1, int(tile.height * scale))
+                target_w = max(1, int((crop_x2 - crop_x1) * scale))
+                target_h = max(1, int((crop_y2 - crop_y1) * scale))
                 if img.size != (target_w, target_h):
                     img = img.resize((target_w, target_h), Image.LANCZOS)
 
