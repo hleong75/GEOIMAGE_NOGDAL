@@ -48,7 +48,9 @@ from .log_widget import LogWidget
 from .preview_widget import PreviewWidget
 from .settings_panel import SettingsPanel
 
+_UI_PREVIEW_MIN_SIZE_PX = 1024
 _UI_PREVIEW_MAX_SIZE_PX = 2048
+_UI_PREVIEW_OVERSAMPLE = 2
 
 
 # ---------------------------------------------------------------------------
@@ -292,7 +294,7 @@ class MainWindow(QMainWindow):
         self._progress.setValue(0)
         self._status_bar.showMessage("Construction de la mosaïque preview...")
         self._thumb_thread = QThread()
-        self._thumb_worker = _ThumbnailWorker(result)
+        self._thumb_worker = _ThumbnailWorker(result, self._target_preview_size())
         self._thumb_worker.moveToThread(self._thumb_thread)
         self._thumb_thread.started.connect(self._thumb_worker.run)
         self._thumb_worker.progress.connect(self._on_thumb_progress)
@@ -326,6 +328,11 @@ class MainWindow(QMainWindow):
         else:
             self._status_bar.showMessage("Aperçu indisponible")
         self._progress.setVisible(False)
+
+    def _target_preview_size(self) -> tuple[int, int]:
+        side = max(self._preview.width(), self._preview.height(), 1) * _UI_PREVIEW_OVERSAMPLE
+        side = max(_UI_PREVIEW_MIN_SIZE_PX, min(side, _UI_PREVIEW_MAX_SIZE_PX))
+        return side, side
 
     def _on_convert(self) -> None:
         if not self._license.can_export:
@@ -511,9 +518,10 @@ class _ThumbnailWorker(QObject):
     finished = pyqtSignal(object)  # (Mosaic, PIL.Image or None)
     progress = pyqtSignal(int, int, str)
 
-    def __init__(self, scan_result) -> None:
+    def __init__(self, scan_result, preview_max_size: tuple[int, int]) -> None:
         super().__init__()
         self._result = scan_result
+        self._preview_max_size = preview_max_size
 
     def run(self) -> None:
         try:
@@ -535,10 +543,7 @@ class _ThumbnailWorker(QObject):
                 def thumbnail_progress_callback(cur: int, total: int) -> None:
                     self.progress.emit(cur, total, f"Chargement aperçu carte : {cur}/{total}")
 
-                thumb = mosaic.get_thumbnail(
-                    (_UI_PREVIEW_MAX_SIZE_PX, _UI_PREVIEW_MAX_SIZE_PX),
-                    progress_callback=thumbnail_progress_callback,
-                )
+                thumb = mosaic.get_thumbnail(self._preview_max_size, progress_callback=thumbnail_progress_callback)
             except Exception:
                 thumb = None
 
