@@ -715,8 +715,8 @@ class Mosaic:
                 crop_y2 = crop_y1 + max(1, tile.height)
                 img = img.crop((crop_x1, crop_y1, crop_x2, crop_y2))
 
-                target_w = max(1, int(round(tile.width * scale)))
-                target_h = max(1, int(round(tile.height * scale)))
+                target_w = max(1, int(tile.width * scale))
+                target_h = max(1, int(tile.height * scale))
                 if img.size != (target_w, target_h):
                     img = img.resize((target_w, target_h), Image.LANCZOS)
 

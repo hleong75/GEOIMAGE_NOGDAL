@@ -331,7 +331,7 @@ def test_thumbnail_respects_tile_source_offsets():
     assert thumb.getpixel((2, 3)) == (160, 150, 0)
 
 
-def test_thumbnail_fills_scaled_tile_rect_for_cropped_source():
+def test_thumbnail_with_cropped_non_square_tiles():
     """Thumbnail must fill tile dimensions for cropped source regions."""
     from PIL import Image
 
