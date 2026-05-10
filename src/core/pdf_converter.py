@@ -88,6 +88,7 @@ _MAX_THUMB_PX = 1024
 _SCREEN_DPI = 96
 # PNG keeps previews/pages lossless to preserve raster fidelity from input to PDF.
 _IMAGE_FORMAT = "PNG"
+_LOSSY_IMAGE_FORMATS = {"JPEG", "WEBP"}
 
 # Approximate character width in points (used to truncate long tile lists)
 _CHAR_WIDTH_APPROX_PT = 4.5
@@ -372,9 +373,20 @@ def _pil_to_bytes(
     fmt: str = "PNG",
     quality: Optional[int] = None,
 ) -> bytes:
+    """Encode a PIL image to bytes.
+
+    Parameters
+    ----------
+    img:
+        Source image to encode.
+    fmt:
+        Target format understood by Pillow (e.g. PNG, JPEG).
+    quality:
+        Optional lossy-quality setting, applied only for lossy formats.
+    """
     buf = io.BytesIO()
     save_kwargs = {"format": fmt}
-    if quality is not None and fmt.upper() in {"JPEG", "WEBP"}:
+    if quality is not None and fmt.upper() in _LOSSY_IMAGE_FORMATS:
         save_kwargs["quality"] = quality
     img.save(buf, **save_kwargs)
     return buf.getvalue()
