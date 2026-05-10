@@ -294,3 +294,68 @@ def test_mosaic_cropped_preserves_source_offsets():
     # Selected x-range starts at source x=6, so first output pixel must match x=6.
     assert region.getpixel((0, 0)) == (120, 0, 0)
     assert region.getpixel((2, 3)) == (160, 150, 0)
+
+
+def test_thumbnail_respects_tile_source_offset():
+    """Thumbnail must render the tile's SrcRect area, not the full source image."""
+    from PIL import Image
+
+    with tempfile.TemporaryDirectory() as tmp:
+        img_path = Path(tmp) / "tile.png"
+        img = Image.new("RGB", (10, 4), color=(0, 0, 0))
+        for x in range(10):
+            for y in range(4):
+                img.putpixel((x, y), (x * 20, y * 50, 0))
+        img.save(img_path)
+
+        layout = MosaicLayout(
+            tiles=[
+                TileInfo(
+                    path=img_path,
+                    x_off=0,
+                    y_off=0,
+                    width=3,
+                    height=4,
+                    src_x_off=6,
+                    src_y_off=0,
+                )
+            ],
+            total_width=3,
+            total_height=4,
+        )
+        mosaic = Mosaic(layout)
+        thumb = mosaic.get_thumbnail(max_size=(3, 4))
+
+    assert thumb.size == (3, 4)
+    assert thumb.getpixel((0, 0)) == (120, 0, 0)
+    assert thumb.getpixel((2, 3)) == (160, 150, 0)
+
+
+def test_thumbnail_with_cropped_non_square_tiles():
+    """Thumbnail must fill tile dimensions for cropped source regions."""
+    from PIL import Image
+
+    with tempfile.TemporaryDirectory() as tmp:
+        img_path = Path(tmp) / "tile.png"
+        Image.new("RGB", (8, 8), color=(10, 20, 30)).save(img_path)
+
+        layout = MosaicLayout(
+            tiles=[
+                TileInfo(
+                    path=img_path,
+                    x_off=0,
+                    y_off=0,
+                    width=6,
+                    height=2,
+                    src_x_off=1,
+                    src_y_off=3,
+                )
+            ],
+            total_width=6,
+            total_height=2,
+        )
+        mosaic = Mosaic(layout)
+        thumb = mosaic.get_thumbnail(max_size=(6, 2))
+
+    assert thumb.size == (6, 2)
+    assert thumb.getpixel((5, 1)) == (10, 20, 30)
