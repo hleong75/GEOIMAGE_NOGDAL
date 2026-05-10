@@ -16,7 +16,7 @@
 | 🖨️ PDF A4 exact | DPI configurable (72–1200), portrait/paysage, marges paramétrables |
 | 🖥️ Interface graphique | PyQt6, drag & drop, aperçu mosaïque, barre de progression |
 | ✂️ Zone de conversion | Sélection rectangulaire directe dans l’aperçu pour exporter seulement une emprise |
-| ⚡ Batch industriel | File d'attente multi-dossiers, multi-threading, gestion erreurs |
+| ⚡ Batch industriel | File d'attente multi-dossiers, multi-threading, gestion erreurs, option "toutes ressources CPU" |
 | 💾 Optimisation mémoire | Rendu tuile par tuile — la mosaïque complète n'est jamais en RAM |
 | 🔑 Système de licence | Clé locale HMAC, mode démo (3 exports), activation sans réseau |
 | 💻 Mode CLI | Utilisation sans GUI pour l'automatisation |

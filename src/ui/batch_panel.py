@@ -6,6 +6,7 @@ Shows a table of BatchJob items with status, progress bar, and controls.
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import List, Optional, Tuple
 
@@ -19,6 +20,7 @@ from PyQt6.QtWidgets import (
     QLineEdit,
     QProgressBar,
     QPushButton,
+    QSpinBox,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -173,6 +175,18 @@ class BatchPanel(QWidget):
 
         for w in (add_btn, clear_btn, self._start_btn, cancel_btn):
             tb.addWidget(w)
+        self._all_resources_check = QCheckBox("Moteur multitâche (toutes ressources)")
+        self._all_resources_check.setToolTip(
+            "Utilise automatiquement tous les cœurs CPU disponibles."
+        )
+        self._all_resources_check.toggled.connect(self._on_all_resources_toggled)
+        tb.addWidget(self._all_resources_check)
+        tb.addWidget(QLabel("Workers :"))
+        self._workers_spin = QSpinBox()
+        self._workers_spin.setRange(1, max(1, os.cpu_count() or 1))
+        self._workers_spin.setValue(self._processor.max_workers)
+        self._workers_spin.valueChanged.connect(self._on_workers_changed)
+        tb.addWidget(self._workers_spin)
         tb.addStretch()
         layout.addLayout(tb)
 
@@ -281,6 +295,17 @@ class BatchPanel(QWidget):
         else:
             self._start_btn.setEnabled(False)
             self._processor.start()
+
+    def _on_all_resources_toggled(self, enabled: bool) -> None:
+        self._workers_spin.setEnabled(not enabled)
+        if enabled:
+            self._processor.set_max_workers(self._processor.available_workers())
+        else:
+            self._processor.set_max_workers(self._workers_spin.value())
+
+    def _on_workers_changed(self, value: int) -> None:
+        if not self._all_resources_check.isChecked():
+            self._processor.set_max_workers(value)
 
     def _start_merge(self) -> None:
         jobs = self._processor.get_jobs()

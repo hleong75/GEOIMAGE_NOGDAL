@@ -7,6 +7,7 @@ Jobs are queued and executed in a thread pool (one thread per job by default).
 
 from __future__ import annotations
 
+import os
 import threading
 from dataclasses import dataclass, field
 from enum import Enum
@@ -60,12 +61,21 @@ class BatchProcessor:
         max_workers: int = 2,
         license_manager: Optional[LicenseManager] = None,
     ) -> None:
-        self.max_workers = max_workers
+        self.max_workers = self._normalize_workers(max_workers)
         self.license = license_manager or LicenseManager()
         self._jobs: List[BatchJob] = []
         self._lock = threading.Lock()
-        self._semaphore = threading.Semaphore(max_workers)
+        self._semaphore = threading.Semaphore(self.max_workers)
         self._threads: list[threading.Thread] = []
+
+    @staticmethod
+    def available_workers() -> int:
+        """Return the number of workers that can use all CPU resources."""
+        return max(1, os.cpu_count() or 1)
+
+    @staticmethod
+    def _normalize_workers(max_workers: int) -> int:
+        return max(1, int(max_workers))
 
     # ------------------------------------------------------------------
     # Public API
@@ -82,6 +92,12 @@ class BatchProcessor:
     def get_jobs(self) -> List[BatchJob]:
         with self._lock:
             return list(self._jobs)
+
+    def set_max_workers(self, max_workers: int) -> None:
+        """Update worker concurrency for future jobs."""
+        with self._lock:
+            self.max_workers = self._normalize_workers(max_workers)
+            self._semaphore = threading.Semaphore(self.max_workers)
 
     def start(self) -> None:
         """Start processing all pending jobs in background threads."""
