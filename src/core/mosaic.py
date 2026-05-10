@@ -708,12 +708,14 @@ class Mosaic:
         total_tiles = len(self.layout.tiles)
         for i, tile in enumerate(self.layout.tiles, start=1):
             try:
+                if tile.width <= 0 or tile.height <= 0:
+                    continue
                 img = _open_image(tile.path)
                 src_w, src_h = img.size
                 crop_x1 = max(0, min(tile.src_x_off, src_w))
                 crop_y1 = max(0, min(tile.src_y_off, src_h))
-                crop_x2 = max(crop_x1, min(tile.src_x_off + max(1, tile.width), src_w))
-                crop_y2 = max(crop_y1, min(tile.src_y_off + max(1, tile.height), src_h))
+                crop_x2 = max(crop_x1, min(tile.src_x_off + tile.width, src_w))
+                crop_y2 = max(crop_y1, min(tile.src_y_off + tile.height, src_h))
                 if crop_x2 <= crop_x1 or crop_y2 <= crop_y1:
                     continue
                 img = img.crop((crop_x1, crop_y1, crop_x2, crop_y2))

@@ -296,7 +296,7 @@ def test_mosaic_cropped_preserves_source_offsets():
     assert region.getpixel((2, 3)) == (160, 150, 0)
 
 
-def test_thumbnail_respects_tile_source_offsets():
+def test_thumbnail_respects_tile_source_offset():
     """Thumbnail must render the tile's SrcRect area, not the full source image."""
     from PIL import Image
 
