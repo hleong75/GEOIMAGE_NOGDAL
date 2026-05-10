@@ -94,7 +94,11 @@ class BatchProcessor:
             return list(self._jobs)
 
     def set_max_workers(self, max_workers: int) -> None:
-        """Update worker concurrency for future jobs."""
+        """Update worker concurrency for future jobs.
+
+        No-op while jobs are running to avoid changing synchronization primitives
+        in-flight.
+        """
         with self._lock:
             if any(t.is_alive() for t in self._threads):
                 return

@@ -28,3 +28,15 @@ def test_batch_processor_set_max_workers_updates_value():
 
 def test_batch_processor_available_workers_is_at_least_one():
     assert BatchProcessor.available_workers() >= 1
+
+
+def test_batch_processor_set_max_workers_noop_when_running_threads_exist():
+    class _AliveThread:
+        @staticmethod
+        def is_alive() -> bool:
+            return True
+
+    processor = BatchProcessor(max_workers=2, license_manager=_DummyLicense())
+    processor._threads = [_AliveThread()]  # noqa: SLF001 - intentional for unit test
+    processor.set_max_workers(8)
+    assert processor.max_workers == 2

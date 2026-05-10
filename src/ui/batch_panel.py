@@ -5,8 +5,6 @@ Shows a table of BatchJob items with status, progress bar, and controls.
 """
 
 from __future__ import annotations
-
-import os
 from pathlib import Path
 from typing import List, Optional, Tuple
 
@@ -183,7 +181,7 @@ class BatchPanel(QWidget):
         tb.addWidget(self._all_resources_check)
         tb.addWidget(QLabel("Workers :"))
         self._workers_spin = QSpinBox()
-        self._workers_spin.setRange(1, max(1, os.cpu_count() or 1))
+        self._workers_spin.setRange(1, self._processor.available_workers())
         self._workers_spin.setValue(self._processor.max_workers)
         self._workers_spin.valueChanged.connect(self._on_workers_changed)
         tb.addWidget(self._workers_spin)
