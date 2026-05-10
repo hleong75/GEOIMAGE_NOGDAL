@@ -51,6 +51,7 @@ from .settings_panel import SettingsPanel
 _UI_PREVIEW_MIN_SIZE_PX = 1024
 _UI_PREVIEW_MAX_SIZE_PX = 2048
 _UI_PREVIEW_OVERSAMPLE = 2
+_MIN_WIDGET_DIMENSION_PX = 1
 
 
 # ---------------------------------------------------------------------------
@@ -330,7 +331,11 @@ class MainWindow(QMainWindow):
         self._progress.setVisible(False)
 
     def _target_preview_size(self) -> tuple[int, int]:
-        side = max(self._preview.width(), self._preview.height(), 1) * _UI_PREVIEW_OVERSAMPLE
+        side = max(
+            self._preview.width(),
+            self._preview.height(),
+            _MIN_WIDGET_DIMENSION_PX,
+        ) * _UI_PREVIEW_OVERSAMPLE
         side = max(_UI_PREVIEW_MIN_SIZE_PX, min(side, _UI_PREVIEW_MAX_SIZE_PX))
         return side, side
 
