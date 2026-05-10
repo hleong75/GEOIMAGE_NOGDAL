@@ -24,9 +24,15 @@ def test_batch_processor_set_max_workers_updates_value():
     processor = BatchProcessor(max_workers=2, license_manager=_DummyLicense())
     processor.set_max_workers(6)
     assert processor.max_workers == 6
-    for _ in range(6):
-        assert processor._semaphore.acquire(blocking=False)  # noqa: SLF001 - intentional for unit test
-    assert not processor._semaphore.acquire(blocking=False)  # noqa: SLF001 - intentional for unit test
+    acquired = 0
+    try:
+        for _ in range(6):
+            assert processor._semaphore.acquire(blocking=False)  # noqa: SLF001 - intentional for unit test
+            acquired += 1
+        assert not processor._semaphore.acquire(blocking=False)  # noqa: SLF001 - intentional for unit test
+    finally:
+        for _ in range(acquired):
+            processor._semaphore.release()  # noqa: SLF001 - intentional for unit test
 
 
 def test_batch_processor_available_workers_is_at_least_one():
