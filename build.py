@@ -19,7 +19,7 @@ ROOT = Path(__file__).parent
 
 def build() -> None:
     assets_dir = ROOT / "assets"
-    icon = ROOT / "assets" / "icon.ico"
+    icon = assets_dir / "icon.ico"
     icon_flag = ["--icon", str(icon)] if icon.exists() else []
     data_flags = ["--add-data", f"{assets_dir}{os.pathsep}assets"] if assets_dir.exists() else []
 
