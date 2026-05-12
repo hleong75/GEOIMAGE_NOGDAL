@@ -83,9 +83,9 @@ _MM_PER_METER = 1000.0
 
 # Overview page thumbnail bounds (pixels)
 _MIN_THUMB_PX = 64
-_MAX_THUMB_PX = 1024
+_MAX_THUMB_PX = 4096
 # Point-to-pixel conversion for preview thumbnail sizing (visual estimate only).
-_SCREEN_DPI = 96
+_SCREEN_DPI = 300
 # PNG keeps previews/pages lossless to preserve raster fidelity from input to PDF.
 _IMAGE_FORMAT = "PNG"
 _LOSSY_IMAGE_FORMATS = {"JPEG", "WEBP"}
@@ -127,7 +127,7 @@ class PDFConfig:
     # Whether to prepend cover + overview pages to each folder's section.
     atlas_pages: bool = True
     # Title displayed on the cover page header (user-customisable).
-    atlas_title: str = "Atlas A4 en mosaïque continue"
+    atlas_title: str = "Atlas GEOIMAGE NOGDAL"
 
     @property
     def page_w_mm(self) -> float:
@@ -653,7 +653,7 @@ def _render_cover_page(
     by = margin_pt                        # printable bottom y
     top_y = page_h_pt - margin_pt         # printable top y (uniform margin on all sides)
 
-    dataset_name = folder_name or "Lot sans titre"
+    dataset_name = folder_name or "Dossier sans titre"
 
     c.saveState()
 
@@ -670,14 +670,14 @@ def _render_cover_page(
     header_text_pad = 5 * mm                           # inner left padding inside header box
     c.setFillColorRGB(*_COL_WHITE)
     c.setFont("Helvetica-Bold", 22)
-    c.drawString(lx + header_text_pad, top_y - 17 * mm, cfg.atlas_title.upper())
+    c.drawString(lx + header_text_pad, top_y - 17 * mm, cfg.atlas_title)
     c.setFont("Helvetica", 12)
     c.drawString(lx + header_text_pad, top_y - 27 * mm, dataset_name)
     c.setFont("Helvetica", 10)
     c.drawString(
         lx + header_text_pad,
         top_y - 36 * mm,
-        f"Généré le {ts.strftime('%d/%m/%Y à %H:%M')}",
+        f"Généré le {ts.strftime('%d/%m/%Y à %H:%M')} par : GEOIMAGE NOGDAL",
     )
 
     # ── Summary box ──────────────────────────────────────────────────────────
