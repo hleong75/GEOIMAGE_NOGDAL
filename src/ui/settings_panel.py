@@ -70,7 +70,7 @@ class SettingsPanel(QWidget):
 
     @property
     def atlas_title(self) -> str:
-        return self._title_edit.text().strip() or "Atlas A4 en mosaïque continue"
+        return self._title_edit.text().strip() or "Atlas GEOIMAGE NOGDAL"
 
     @property
     def output_dir(self) -> Path:
@@ -123,7 +123,7 @@ class SettingsPanel(QWidget):
         form.addRow("", self._optimal_overlap_check)
 
         self._title_edit = QLineEdit()
-        self._title_edit.setPlaceholderText("Atlas A4 en mosaïque continue")
+        self._title_edit.setPlaceholderText("Atlas GEOIMAGE NOGDAL")
         self._title_edit.setToolTip(
             "Titre affiché en grand sur la page de garde du PDF"
         )

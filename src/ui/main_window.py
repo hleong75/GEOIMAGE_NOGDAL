@@ -48,6 +48,11 @@ from .log_widget import LogWidget
 from .preview_widget import PreviewWidget
 from .settings_panel import SettingsPanel
 
+_UI_PREVIEW_MIN_SIZE_PX = 1024
+_UI_PREVIEW_MAX_SIZE_PX = 2048
+_UI_PREVIEW_OVERSAMPLE = 2
+_MIN_WIDGET_DIMENSION_PX = 1
+
 
 # ---------------------------------------------------------------------------
 # Worker thread for single-folder conversion
@@ -290,7 +295,7 @@ class MainWindow(QMainWindow):
         self._progress.setValue(0)
         self._status_bar.showMessage("Construction de la mosaïque preview...")
         self._thumb_thread = QThread()
-        self._thumb_worker = _ThumbnailWorker(result)
+        self._thumb_worker = _ThumbnailWorker(result, self._target_preview_size())
         self._thumb_worker.moveToThread(self._thumb_thread)
         self._thumb_thread.started.connect(self._thumb_worker.run)
         self._thumb_worker.progress.connect(self._on_thumb_progress)
@@ -324,6 +329,20 @@ class MainWindow(QMainWindow):
         else:
             self._status_bar.showMessage("Aperçu indisponible")
         self._progress.setVisible(False)
+
+    def _target_preview_size(self) -> tuple[int, int]:
+        """Compute a square preview target size from the current widget dimensions.
+
+        The size is oversampled to improve perceived sharpness, then clamped to
+        bounded limits to avoid excessive memory usage.
+        """
+        target_size = max(
+            self._preview.width(),
+            self._preview.height(),
+            _MIN_WIDGET_DIMENSION_PX,
+        ) * _UI_PREVIEW_OVERSAMPLE
+        target_size = max(_UI_PREVIEW_MIN_SIZE_PX, min(target_size, _UI_PREVIEW_MAX_SIZE_PX))
+        return target_size, target_size
 
     def _on_convert(self) -> None:
         if not self._license.can_export:
@@ -509,9 +528,10 @@ class _ThumbnailWorker(QObject):
     finished = pyqtSignal(object)  # (Mosaic, PIL.Image or None)
     progress = pyqtSignal(int, int, str)
 
-    def __init__(self, scan_result) -> None:
+    def __init__(self, scan_result, preview_max_size: tuple[int, int]) -> None:
         super().__init__()
         self._result = scan_result
+        self._preview_max_size = preview_max_size
 
     def run(self) -> None:
         try:
@@ -533,7 +553,7 @@ class _ThumbnailWorker(QObject):
                 def thumbnail_progress_callback(cur: int, total: int) -> None:
                     self.progress.emit(cur, total, f"Chargement aperçu carte : {cur}/{total}")
 
-                thumb = mosaic.get_thumbnail((600, 600), progress_callback=thumbnail_progress_callback)
+                thumb = mosaic.get_thumbnail(self._preview_max_size, progress_callback=thumbnail_progress_callback)
             except Exception:
                 thumb = None
 

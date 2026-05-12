@@ -83,10 +83,12 @@ _MM_PER_METER = 1000.0
 
 # Overview page thumbnail bounds (pixels)
 _MIN_THUMB_PX = 64
-_MAX_THUMB_PX = 1024
+_MAX_THUMB_PX = 4096
 # Point-to-pixel conversion for preview thumbnail sizing (visual estimate only).
-_SCREEN_DPI = 96
-_PREVIEW_JPEG_QUALITY = 80
+_SCREEN_DPI = 300
+# PNG keeps previews/pages lossless to preserve raster fidelity from input to PDF.
+_IMAGE_FORMAT = "PNG"
+_LOSSY_IMAGE_FORMATS = {"JPEG", "WEBP"}
 
 # Approximate character width in points (used to truncate long tile lists)
 _CHAR_WIDTH_APPROX_PT = 4.5
@@ -125,7 +127,7 @@ class PDFConfig:
     # Whether to prepend cover + overview pages to each folder's section.
     atlas_pages: bool = True
     # Title displayed on the cover page header (user-customisable).
-    atlas_title: str = "Atlas A4 en mosaïque continue"
+    atlas_title: str = "Atlas GEOIMAGE NOGDAL"
 
     @property
     def page_w_mm(self) -> float:
@@ -366,9 +368,27 @@ def _compute_axis_starts_optimal(total_size: int, page_size: int, min_overlap: i
     return starts
 
 
-def _pil_to_bytes(img: "Image.Image", fmt: str = "JPEG", quality: int = 90) -> bytes:
+def _pil_to_bytes(
+    img: "Image.Image",
+    fmt: str = "PNG",
+    quality: Optional[int] = None,
+) -> bytes:
+    """Encode a PIL image to bytes.
+
+    Parameters
+    ----------
+    img:
+        Source image to encode.
+    fmt:
+        Target format understood by Pillow (e.g. PNG, JPEG).
+    quality:
+        Optional lossy-quality setting, applied only for lossy formats.
+    """
     buf = io.BytesIO()
-    img.save(buf, format=fmt, quality=quality)
+    save_kwargs = {"format": fmt}
+    if quality is not None and fmt.upper() in _LOSSY_IMAGE_FORMATS:
+        save_kwargs["quality"] = quality
+    img.save(buf, **save_kwargs)
     return buf.getvalue()
 
 
@@ -554,7 +574,7 @@ def _draw_mosaic_preview_with_index(
     max_thumb_w = max(_MIN_THUMB_PX, min(max_thumb_w, _MAX_THUMB_PX))
     max_thumb_h = max(_MIN_THUMB_PX, min(max_thumb_h, _MAX_THUMB_PX))
     thumb = mosaic.get_thumbnail(max_size=(max_thumb_w, max_thumb_h))
-    thumb_bytes = _pil_to_bytes(thumb, fmt="JPEG", quality=_PREVIEW_JPEG_QUALITY)
+    thumb_bytes = _pil_to_bytes(thumb, fmt=_IMAGE_FORMAT)
     thumb_reader = ImageReader(io.BytesIO(thumb_bytes))
 
     scale_x = box_w / max(thumb.width, 1)
@@ -633,7 +653,7 @@ def _render_cover_page(
     by = margin_pt                        # printable bottom y
     top_y = page_h_pt - margin_pt         # printable top y (uniform margin on all sides)
 
-    dataset_name = folder_name or "Lot sans titre"
+    dataset_name = folder_name or "Dossier sans titre"
 
     c.saveState()
 
@@ -650,14 +670,14 @@ def _render_cover_page(
     header_text_pad = 5 * mm                           # inner left padding inside header box
     c.setFillColorRGB(*_COL_WHITE)
     c.setFont("Helvetica-Bold", 22)
-    c.drawString(lx + header_text_pad, top_y - 17 * mm, cfg.atlas_title.upper())
+    c.drawString(lx + header_text_pad, top_y - 17 * mm, cfg.atlas_title)
     c.setFont("Helvetica", 12)
     c.drawString(lx + header_text_pad, top_y - 27 * mm, dataset_name)
     c.setFont("Helvetica", 10)
     c.drawString(
         lx + header_text_pad,
         top_y - 36 * mm,
-        f"Généré le {ts.strftime('%d/%m/%Y à %H:%M')}",
+        f"Généré le {ts.strftime('%d/%m/%Y à %H:%M')} par : GEOIMAGE NOGDAL",
     )
 
     # ── Summary box ──────────────────────────────────────────────────────────
@@ -887,7 +907,7 @@ def _render_legacy_page(
 ) -> None:
     """Legacy rendering: image fills printable area with simple bottom label."""
     region = mosaic.get_region(page.src_x, page.src_y, page.src_w, page.src_h)
-    img_bytes = _pil_to_bytes(region, fmt="JPEG", quality=92)
+    img_bytes = _pil_to_bytes(region, fmt=_IMAGE_FORMAT)
     img_reader = ImageReader(io.BytesIO(img_bytes))
 
     scale_x = printable_w_pt / max(page.src_w, 1)
@@ -963,7 +983,7 @@ def _render_atlas_content_page(
     # ── Map image ──────────────────────────────────────────────────────────
     if img_h > 0 and img_w > 0 and page.src_w > 0 and page.src_h > 0:
         region = mosaic.get_region(page.src_x, page.src_y, page.src_w, page.src_h)
-        img_bytes = _pil_to_bytes(region, fmt="JPEG", quality=92)
+        img_bytes = _pil_to_bytes(region, fmt=_IMAGE_FORMAT)
         img_reader = ImageReader(io.BytesIO(img_bytes))
         c.drawImage(
             img_reader,
